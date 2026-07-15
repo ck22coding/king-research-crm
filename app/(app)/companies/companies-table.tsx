@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { addCompany } from "./actions";
-import { Avatar, StatusPill, fmtDate } from "@/lib/format";
+import { Avatar, StatusPill, effectiveStatus, fmtDate } from "@/lib/format";
 import type { CompanyStatus } from "@/lib/supabase/database.types";
 
 export type CompanyRow = {
@@ -25,7 +25,13 @@ function matches(row: CompanyRow, q: string) {
 // Owns the toolbar's filter input + "+ New" form + the table itself: all
 // three need to share the live filter/add state, so they live in one small
 // client component fed by the server-fetched `companies` prop — no re-fetch.
-export default function CompaniesTable({ companies }: { companies: CompanyRow[] }) {
+export default function CompaniesTable({
+  companies,
+  activeJobCompanyIds = [],
+}: {
+  companies: CompanyRow[];
+  activeJobCompanyIds?: string[];
+}) {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
 
@@ -103,7 +109,7 @@ export default function CompaniesTable({ companies }: { companies: CompanyRow[] 
                 </td>
                 <td>{c.ownership}</td>
                 <td>
-                  <StatusPill status={c.status} />
+                  <StatusPill status={effectiveStatus(c.status, activeJobCompanyIds.includes(c.id))} />
                 </td>
                 <td>{fmtDate(c.updated_at)}</td>
               </tr>

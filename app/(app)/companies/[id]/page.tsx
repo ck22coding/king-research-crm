@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Avatar, StatusPill, STATUS_LABEL, fmtDate } from "@/lib/format";
+import { Avatar, StatusPill, STATUS_LABEL, effectiveStatus, fmtDate } from "@/lib/format";
 import { setFactStatus } from "./actions";
+import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
@@ -38,7 +39,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: company }, { data: facts }] = await Promise.all([
+  const [{ data: company }, { data: facts }, { data: jobs }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("facts")
@@ -46,9 +47,13 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
       .eq("company_id", id)
       .neq("status", "rejected")
       .order("created_at"),
+    // Spinner-worthy job for this company right now (Task 7).
+    supabase.from("enrichment_jobs").select("id").eq("company_id", id).in("status", ["queued", "running"]),
   ]);
 
   if (!company) notFound();
+
+  const status = effectiveStatus(company.status, (jobs ?? []).length > 0);
 
   const bySection = new Map<FactSection, FactRow[]>();
   for (const fact of (facts ?? []) as unknown as FactRow[]) {
@@ -59,13 +64,14 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
 
   return (
     <>
+      <RealtimeRefresh companyId={company.id} />
       <div className="toolbar">
         <span className="crumbs">
           <button data-href="/companies">Companies</button> <span>/</span>{" "}
           <span style={{ color: "var(--ink)" }}>{company.name}</span>
         </span>
         <span className="spacer"></span>
-        <StatusPill status={company.status} />
+        <StatusPill status={status} />
       </div>
       <div className="scroll">
         <div className="rec-head">
@@ -91,7 +97,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             <Attr k="Domain" v={company.domain} />
             <Attr k="Ownership" v={company.ownership} />
             <Attr k="Headquarters" v={company.hq} />
-            <Attr k="Brief status" v={STATUS_LABEL[company.status]} />
+            <Attr k="Brief status" v={STATUS_LABEL[status]} />
             <Attr k="Last updated" v={fmtDate(company.updated_at)} />
           </div>
           <div className="content">

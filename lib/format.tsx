@@ -8,6 +8,13 @@ export const STATUS_LABEL: Record<CompanyStatus, string> = {
   queued: "Queued",
 };
 
+// Spinner state (Task 7): in_progress-looking pill whenever the company is
+// mid-brief OR has a queued/running enrichment_jobs row, even if the
+// company row itself hasn't flipped to in_progress yet.
+export function effectiveStatus(status: CompanyStatus, hasActiveJob: boolean): CompanyStatus {
+  return hasActiveJob || status === "in_progress" ? "in_progress" : status;
+}
+
 export function StatusPill({ status }: { status: CompanyStatus }) {
   return (
     <span className={`status ${status}`}>
