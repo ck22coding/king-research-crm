@@ -134,8 +134,8 @@
 
   /* ---------- record page ---------- */
   .crumbs{display:flex; align-items:center; gap:6px; color:var(--ink-3); font-size:12px}
-  .crumbs a{color:var(--ink-3); text-decoration:none}
-  .crumbs a:hover{color:var(--ink)}
+  .crumbs a, .crumbs button{color:var(--ink-3); text-decoration:none}
+  .crumbs a:hover, .crumbs button:hover{color:var(--ink)}
   .rec-head{display:flex; align-items:center; gap:12px; padding:18px 24px 14px}
   .rec-head .avatar{width:40px; height:40px; border-radius:10px; font-size:16px}
   .rec-head h1{font-size:19px; font-weight:600; letter-spacing:-.01em}

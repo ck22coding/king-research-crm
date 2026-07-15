@@ -2,7 +2,7 @@
 // as components — the prototype's string-template functions become JSX.
 import type { CompanyStatus } from "./supabase/database.types";
 
-const STATUS_LABEL: Record<CompanyStatus, string> = {
+export const STATUS_LABEL: Record<CompanyStatus, string> = {
   ready: "Ready",
   in_progress: "In progress",
   queued: "Queued",
