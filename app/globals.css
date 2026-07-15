@@ -93,6 +93,15 @@
   .tag:hover{background:var(--hover)}
   .tag.on{background:var(--accent-weak); border-color:var(--accent); color:var(--accent); font-weight:500}
 
+  /* ---------- add-company inline form (new in v1 — no prototype markup) ---------- */
+  .add-form{
+    flex:none; display:flex; align-items:center; gap:8px;
+    padding:10px 16px; border-bottom:1px solid var(--border); background:var(--plane);
+  }
+  .add-form input{
+    border:1px solid var(--border); border-radius:8px; padding:5px 8px; background:var(--bg);
+  }
+
   .scroll{flex:1; overflow:auto}
 
   /* ---------- table ---------- */
