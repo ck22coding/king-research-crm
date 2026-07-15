@@ -172,6 +172,23 @@
     width:15px; height:15px; border-radius:50%; background:var(--border-2); color:var(--ink-2);
     display:grid; place-items:center; font-size:9px; font-weight:700; flex:none;
   }
+  /* ---------- suggested facts (new in v1 — no prototype markup) ---------- */
+  .item.suggested{
+    background:var(--warn-bg); border-radius:8px; border-top:none;
+    padding:9px 10px; margin:4px 0; border-left:3px solid var(--warn);
+  }
+  .fact-actions{display:flex; align-items:center; gap:6px; margin-top:8px}
+  .fact-actions form{display:inline-flex}
+  .suggested-badge{
+    font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--warn-text); background:var(--bg); border:1px solid var(--warn);
+    border-radius:999px; padding:2px 8px; margin-right:2px;
+  }
+  .fact-actions .btn{padding:3px 10px; font-size:12px}
+  .fact-actions .btn.approve{border-color:var(--good); color:var(--good-text)}
+  .fact-actions .btn.approve:hover{background:var(--good-bg)}
+  .fact-actions .btn.reject:hover{background:var(--hover)}
+
   .empty{
     border:1px dashed var(--border-2); border-radius:8px; padding:12px;
     color:var(--ink-3); font-size:12px; text-align:center;

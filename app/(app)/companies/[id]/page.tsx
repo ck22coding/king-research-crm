@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, StatusPill, STATUS_LABEL, fmtDate } from "@/lib/format";
-import type { FactSection } from "@/lib/supabase/database.types";
+import { setFactStatus } from "./actions";
+import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
@@ -29,6 +30,7 @@ type FactRow = {
   section: FactSection;
   text: string;
   fact_date: string | null;
+  status: FactStatus;
   sources: SourceRow[];
 };
 
@@ -40,7 +42,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("facts")
-      .select("id, section, text, fact_date, sources(publisher, title, url, year)")
+      .select("id, section, text, fact_date, status, sources(publisher, title, url, year)")
       .eq("company_id", id)
       .neq("status", "rejected")
       .order("created_at"),
@@ -145,8 +147,9 @@ function SectionCard({
 }
 
 function ItemRow({ item }: { item: FactRow }) {
+  const suggested = item.status === "suggested";
   return (
-    <div className="item">
+    <div className={suggested ? "item suggested" : "item"}>
       <div className="row">
         <div className="txt">{item.text}</div>
         {item.fact_date && <div className="date">{fmtDate(item.fact_date)}</div>}
@@ -158,6 +161,27 @@ function ItemRow({ item }: { item: FactRow }) {
           ))}
         </div>
       )}
+      {suggested && <FactActions factId={item.id} />}
+    </div>
+  );
+}
+
+// Suggested facts only — approve/reject calls the setFactStatus server
+// action directly (bind works in Server Components, no client JS needed).
+function FactActions({ factId }: { factId: string }) {
+  return (
+    <div className="fact-actions">
+      <span className="suggested-badge">Suggested</span>
+      <form>
+        <button type="submit" className="btn approve" formAction={setFactStatus.bind(null, factId, "approved")}>
+          Approve
+        </button>
+      </form>
+      <form>
+        <button type="submit" className="btn reject" formAction={setFactStatus.bind(null, factId, "rejected")}>
+          Reject
+        </button>
+      </form>
     </div>
   );
 }
