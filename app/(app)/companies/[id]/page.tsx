@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, StatusPill, STATUS_LABEL, effectiveStatus, fmtDate } from "@/lib/format";
-import { setFactStatus } from "./actions";
+import { setFactStatus, enrichCompany } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 
@@ -71,6 +71,11 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
           <span style={{ color: "var(--ink)" }}>{company.name}</span>
         </span>
         <span className="spacer"></span>
+        <form>
+          <button type="submit" className="btn primary" formAction={enrichCompany.bind(null, company.id)}>
+            Enrich
+          </button>
+        </form>
         <StatusPill status={status} />
       </div>
       <div className="scroll">
