@@ -52,3 +52,13 @@ export function fmtDate(iso: string | null) {
     year: "numeric",
   });
 }
+
+// Ported 1:1 from crm-ui/index.html's money()/isDated() — used by the
+// markets pages' KPI cards and bar chart.
+export function money(v: number) {
+  return "$" + (v >= 100 ? Math.round(v) : v.toFixed(1)) + "B";
+}
+
+export function isDated(year: number) {
+  return new Date().getFullYear() - year >= 3;
+}

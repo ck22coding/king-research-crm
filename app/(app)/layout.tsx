@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { MARKETS_COUNT } from "@/lib/markets";
+import { markets } from "@/lib/markets-data";
 import { signOut } from "./actions";
 import ShellEvents from "./shell-events";
 
@@ -34,7 +34,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
             <path d="M8.6 1.9L14 7.3a1.4 1.4 0 010 2L9.3 14a1.4 1.4 0 01-2 0L1.9 8.6A1.3 1.3 0 011.5 7.6V3a1.5 1.5 0 011.5-1.5h4.6c.37 0 .73.15 1 .4z" />
             <circle cx="5.2" cy="5.2" r="1" fill="currentColor" stroke="none" />
           </svg>
-          Markets <span className="count">{MARKETS_COUNT}</span>
+          Markets <span className="count">{markets.length}</span>
         </button>
 
         <div className="sidebar-foot">
