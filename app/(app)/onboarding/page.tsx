@@ -42,7 +42,26 @@ export default function OnboardingPage() {
 
             <div className="card">
               <h3>3. Runner setup</h3>
-              <div className="empty">Runner setup ships in Phase 4 — check back soon.</div>
+              <p style={{ marginBottom: 8 }}>
+                Clone or copy the <code>runner/</code> folder onto this machine, then install its dependencies:
+              </p>
+              <div className="chips" style={{ marginBottom: 8 }}>
+                <span className="chip">
+                  <code>cd runner && npm install</code>
+                </span>
+              </div>
+              <p style={{ marginBottom: 8 }}>
+                Confirm the project&rsquo;s <code>.env</code> (at the repo root) has <code>RUNNER_EMAIL</code> /{" "}
+                <code>RUNNER_PASSWORD</code> plus the Supabase URL and anon key, then start the runner:
+              </p>
+              <div className="chips" style={{ marginBottom: 8 }}>
+                <span className="chip">
+                  <code>node index.mjs</code>
+                </span>
+              </div>
+              <p>
+                Leave it running — it polls for queued jobs and researches using the plugin installed in step 2.
+              </p>
             </div>
           </div>
         </div>
