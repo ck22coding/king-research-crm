@@ -15,11 +15,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .select("*", { count: "exact", head: true });
 
   return (
+    <>
     <div className="app">
       <aside className="sidebar">
         <div className="ws">
           <div className="ws-logo">K</div> King Research
+          <svg className="chev" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.7">
+            <path d="M4 6l4 4 4-4" />
+          </svg>
         </div>
+        <label className="search">
+          <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6">
+            <circle cx="7" cy="7" r="4.5" />
+            <path d="M10.5 10.5L14 14" />
+          </svg>
+          <input id="q" placeholder="Search records…" autoComplete="off" />
+          <kbd>⌘K</kbd>
+        </label>
 
         <div className="nav-label">Records</div>
         <button className="nav-item" data-href="/companies">
@@ -80,5 +92,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
       <ShellEvents />
     </div>
+    <div id="tooltip" className="tooltip" hidden></div>
+    </>
   );
 }

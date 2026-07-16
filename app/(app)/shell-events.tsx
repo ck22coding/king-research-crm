@@ -57,6 +57,10 @@ export default function ShellEvents() {
     }
     function onKeydown(e: KeyboardEvent) {
       if (e.key === "Escape") closeBrowser();
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        document.getElementById("q")?.focus();
+      }
     }
     function onUrlKeydown(e: KeyboardEvent) {
       if (e.key === "Enter") {
@@ -84,8 +88,31 @@ export default function ShellEvents() {
       window.addEventListener("mouseup", up);
     }
 
+    // Tooltip: ports the prototype's #tooltip mouseover/mousemove pair —
+    // any element with data-tip shows its text next to the cursor.
+    const tip = document.getElementById("tooltip") as HTMLElement | null;
+    function onMouseover(e: MouseEvent) {
+      if (!tip) return;
+      const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tip]");
+      if (!t) {
+        tip.hidden = true;
+        return;
+      }
+      tip.textContent = t.dataset.tip ?? "";
+      tip.hidden = false;
+    }
+    function onMousemove(e: MouseEvent) {
+      if (!tip || tip.hidden) return;
+      const pad = 12;
+      const r = tip.getBoundingClientRect();
+      tip.style.left = Math.min(e.clientX + pad, window.innerWidth - r.width - 8) + "px";
+      tip.style.top = Math.min(e.clientY + pad, window.innerHeight - r.height - 8) + "px";
+    }
+
     document.addEventListener("click", onClick);
     document.addEventListener("keydown", onKeydown);
+    document.addEventListener("mouseover", onMouseover);
+    document.addEventListener("mousemove", onMousemove);
     bpClose.addEventListener("click", closeBrowser);
     bpExt.addEventListener("click", onExtClick);
     bpUrl.addEventListener("keydown", onUrlKeydown);
@@ -94,6 +121,8 @@ export default function ShellEvents() {
     return () => {
       document.removeEventListener("click", onClick);
       document.removeEventListener("keydown", onKeydown);
+      document.removeEventListener("mouseover", onMouseover);
+      document.removeEventListener("mousemove", onMousemove);
       bpClose.removeEventListener("click", closeBrowser);
       bpExt.removeEventListener("click", onExtClick);
       bpUrl.removeEventListener("keydown", onUrlKeydown);

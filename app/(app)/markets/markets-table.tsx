@@ -18,9 +18,15 @@ function matches(m: Market, q: string) {
 export default function MarketsTable({ markets }: { markets: Market[] }) {
   const [q, setQ] = useState("");
   const [tag, setTag] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
 
   const allTags = [...new Set(markets.flatMap((m) => m.tags))];
   const rows = markets.filter((m) => matches(m, q)).filter((m) => !tag || m.tags.includes(tag));
+
+  function showToast() {
+    setToast("Records get created by the research skills — coming with the Supabase backend.");
+    setTimeout(() => setToast(null), 3200);
+  }
 
   return (
     <>
@@ -39,6 +45,9 @@ export default function MarketsTable({ markets }: { markets: Market[] }) {
           </svg>
           <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
+        <button className="btn primary" onClick={showToast}>
+          + New
+        </button>
       </div>
 
       <div className="tag-row">
@@ -109,6 +118,7 @@ export default function MarketsTable({ markets }: { markets: Market[] }) {
           </div>
         )}
       </div>
+      {toast && <div className="toast">{toast}</div>}
     </>
   );
 }
