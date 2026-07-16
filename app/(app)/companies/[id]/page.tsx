@@ -14,13 +14,16 @@ import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 // Canon slugs (supabase/migrations/20260715120000_initial_schema.sql) mapped
 // to the approved display titles, in the fixed 8-section order. `whatIfEmpty`
 // mirrors the prototype's per-section emptyState() copy.
+// Display order (2026-07-16 redesign): timely signal first (news, growth,
+// money extend the TL;DR's trajectory/M&A sentences), then context
+// (leadership), then the read-on gate (risk flags), then diligence detail.
 const SECTIONS: { slug: FactSection; title: string; whatIfEmpty: string }[] = [
-  { slug: "leadership", title: "Leadership & people", whatIfEmpty: "senior management changes" },
   { slug: "news", title: "News & announcements", whatIfEmpty: "recent company news" },
-  { slug: "money", title: "Money", whatIfEmpty: "financial performance, funding & M&A" },
   { slug: "growth_signals", title: "Growth signals", whatIfEmpty: "hiring, contracts & customer wins" },
-  { slug: "regulatory", title: "Regulatory", whatIfEmpty: "FDA / CMS / reimbursement news" },
+  { slug: "money", title: "Money", whatIfEmpty: "financial performance, funding & M&A" },
+  { slug: "leadership", title: "Leadership & people", whatIfEmpty: "senior management changes" },
   { slug: "risk_flags", title: "Risk flags", whatIfEmpty: "risk flags" },
+  { slug: "regulatory", title: "Regulatory", whatIfEmpty: "FDA / CMS / reimbursement news" },
   { slug: "segmentation", title: "Segmentation", whatIfEmpty: "how the business breaks down" },
   { slug: "market_sizing", title: "Market sizing", whatIfEmpty: "best-effort SAM estimates" },
 ];
@@ -164,6 +167,22 @@ function ItemRow({ item }: { item: FactRow }) {
         </div>
       )}
       {suggested && <FactActions factId={item.id} />}
+      {item.status === "approved" && <RemoveAction factId={item.id} />}
+    </div>
+  );
+}
+
+// Approved facts only — walks an approval back. Reuses setFactStatus's
+// approved→rejected transition; rejected facts are excluded from this page's
+// query, so this is effectively "remove."
+function RemoveAction({ factId }: { factId: string }) {
+  return (
+    <div className="fact-actions">
+      <form>
+        <button type="submit" className="btn reject" formAction={setFactStatus.bind(null, factId, "rejected")}>
+          Remove
+        </button>
+      </form>
     </div>
   );
 }

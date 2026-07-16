@@ -12,6 +12,9 @@ process.loadEnvFile("/Users/carterking/Projects/dad/.env");
 const WAYSTAR_ID = "c0000000-0000-4000-8000-000000000001";
 const SUGGESTED_FACT_ID = "f0000000-0000-4000-8000-000000000107";
 const FACT_TEXT = "38 open roles";
+// Waystar's GPO-contracts fact, seeded 'approved' — the un-accept fixture.
+const APPROVED_FACT_ID = "f0000000-0000-4000-8000-000000000108";
+const APPROVED_FACT_TEXT = "GPO contracts";
 
 test.describe("approve / reject suggested facts", () => {
   test.beforeEach(async () => {
@@ -30,6 +33,14 @@ test.describe("approve / reject suggested facts", () => {
       .update({ status: "suggested" })
       .eq("id", SUGGESTED_FACT_ID);
     if (error) throw error;
+
+    // Self-resetting like the suggested fixture: prior runs of the remove
+    // test leave this fact 'rejected'.
+    const { error: approvedResetError } = await supabase
+      .from("facts")
+      .update({ status: "approved" })
+      .eq("id", APPROVED_FACT_ID);
+    if (approvedResetError) throw approvedResetError;
   });
 
   test("approving a suggested fact persists as approved across reload", async ({
@@ -73,6 +84,35 @@ test.describe("approve / reject suggested facts", () => {
     await expect(approvedItem).not.toHaveClass(/\bsuggested\b/);
     await expect(approvedItem.getByRole("button", { name: "Approve" })).toHaveCount(0);
     await expect(approvedItem.getByRole("button", { name: "Reject" })).toHaveCount(0);
+
+    await context.close();
+  });
+
+  test("removing an approved fact hides it and persists across reload", async ({
+    browser,
+    baseURL,
+  }) => {
+    // Same fresh-context rationale as the approve test above.
+    const context = await browser.newContext({ baseURL });
+    const auth = await context.request.post("/api/test-auth", {
+      data: { email: process.env.RUNNER_EMAIL, password: process.env.RUNNER_PASSWORD },
+    });
+    if (!auth.ok()) throw new Error(`/api/test-auth failed: ${auth.status()} ${await auth.text()}`);
+    const page = await context.newPage();
+
+    await page.goto(`/companies/${WAYSTAR_ID}`);
+
+    const item = page.locator(".item", { hasText: APPROVED_FACT_TEXT });
+    await expect(item).toBeVisible();
+    await expect(item.getByRole("button", { name: "Remove" })).toBeVisible();
+
+    await item.getByRole("button", { name: "Remove" }).click();
+
+    // Rejected facts are excluded from the page query — the item disappears.
+    await expect(item).toHaveCount(0);
+
+    await page.reload();
+    await expect(page.locator(".item", { hasText: APPROVED_FACT_TEXT })).toHaveCount(0);
 
     await context.close();
   });

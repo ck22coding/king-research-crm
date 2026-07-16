@@ -6,12 +6,12 @@ const WAYSTAR_ID = "c0000000-0000-4000-8000-000000000001";
 const R1_RCM_ID = "c0000000-0000-4000-8000-000000000002";
 
 const SECTION_TITLES = [
-  "Leadership & people",
   "News & announcements",
-  "Money",
   "Growth signals",
-  "Regulatory",
+  "Money",
+  "Leadership & people",
   "Risk flags",
+  "Regulatory",
   "Segmentation",
   "Market sizing",
 ];

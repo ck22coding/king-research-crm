@@ -5,15 +5,16 @@ import { createClient } from "@/lib/supabase/server";
 
 // The migration's "authenticated update" policy on facts is `using (true)` —
 // any signed-in user can approve/reject, so no can_enrich check here. The
-// .eq("status", "suggested") scopes this action to the one transition the UI
-// offers; server actions are directly callable, so don't trust the caller.
+// .in("status", [...]) scopes this action to the transitions the UI offers:
+// suggested→approved/rejected, and approved→rejected (un-accept/"Remove").
+// Server actions are directly callable, so don't trust the caller.
 export async function setFactStatus(factId: string, status: "approved" | "rejected") {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("facts")
     .update({ status })
     .eq("id", factId)
-    .eq("status", "suggested")
+    .in("status", ["suggested", "approved"])
     .select("company_id")
     .single();
   if (error || !data) return; // realtime refresh keeps stale UI honest
