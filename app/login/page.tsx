@@ -1,61 +1,12 @@
-"use client";
+import LoginForm from "./login-form";
 
-import { useState, type FormEvent } from "react";
-import { createClient } from "@/lib/supabase/client";
-
-export default function LoginPage() {
-  const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sending" | "sent" | "error">("idle");
-  const [error, setError] = useState("");
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setStatus("sending");
-
-    const supabase = createClient();
-    const { error: signInError } = await supabase.auth.signInWithOtp({
-      email,
-      options: { emailRedirectTo: `${window.location.origin}/auth/callback` },
-    });
-
-    if (signInError) {
-      const invite = /signup|not allowed/i.test(signInError.message);
-      setError(
-        invite
-          ? "This CRM is invite-only — ask Carter for an invite."
-          : signInError.message,
-      );
-      setStatus("error");
-      return;
-    }
-
-    setStatus("sent");
-  }
-
-  if (status === "sent") {
-    return (
-      <main>
-        <p>Check your email for a sign-in link.</p>
-      </main>
-    );
-  }
-
-  return (
-    <main>
-      <form onSubmit={handleSubmit}>
-        <label htmlFor="email">Email</label>
-        <input
-          id="email"
-          type="email"
-          value={email}
-          onChange={(event) => setEmail(event.target.value)}
-          required
-        />
-        <button type="submit" disabled={status === "sending"}>
-          {status === "sending" ? "Sending…" : "Send magic link"}
-        </button>
-        {status === "error" && <p role="alert">{error}</p>}
-      </form>
-    </main>
-  );
+// /auth/callback redirects failures here as ?error=… — surface it instead of
+// silently showing the send-link form again.
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ error?: string }>;
+}) {
+  const { error } = await searchParams;
+  return <LoginForm linkError={error ?? ""} />;
 }
