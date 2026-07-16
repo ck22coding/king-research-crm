@@ -1,5 +1,6 @@
 // Ports crm-ui/index.html's small render helpers (statusPill, avatar, fmtDate)
 // as components — the prototype's string-template functions become JSX.
+import type { ReactNode } from "react";
 import type { CompanyStatus } from "./supabase/database.types";
 
 export const STATUS_LABEL: Record<CompanyStatus, string> = {
@@ -61,4 +62,37 @@ export function money(v: number) {
 
 export function isDated(year: number) {
   return new Date().getFullYear() - year >= 3;
+}
+
+// Shared atoms of the two record pages (companies/[id], markets/[id]) —
+// previously defined verbatim in both. Structural SrcLike covers the DB's
+// SourceRow (nullable title/year) and markets-data's MarketSource (optional).
+export type SrcLike = { publisher: string; title?: string | null; url: string; year?: number | null };
+
+export function Attr({ k, v }: { k: string; v: ReactNode }) {
+  return (
+    <div className="attr">
+      <span className="k">{k}</span>
+      <span className="v">{v}</span>
+    </div>
+  );
+}
+
+export function SrcChip({ source }: { source: SrcLike }) {
+  const tip = `${source.title || "Source"} — ${source.publisher}${source.year ? `, ${source.year}` : ""}`;
+  return (
+    <button className="src" data-url={source.url} data-tip={tip}>
+      <span className="src-dot">{source.publisher[0]}</span>
+      {source.publisher}
+    </button>
+  );
+}
+
+export function EmptyState({ what }: { what: string }) {
+  return (
+    <div className="empty">
+      Nothing found — &ldquo;{what}&rdquo; was checked and came back empty. That&rsquo;s a valid
+      result, not an error.
+    </div>
+  );
 }

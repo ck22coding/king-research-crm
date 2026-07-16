@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Avatar, StatusPill, STATUS_LABEL, effectiveStatus, fmtDate } from "@/lib/format";
+import { Avatar, StatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
 import { setFactStatus, enrichCompany } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
@@ -125,15 +125,6 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
   );
 }
 
-function Attr({ k, v }: { k: string; v: string | null }) {
-  return (
-    <div className="attr">
-      <span className="k">{k}</span>
-      <span className="v">{v}</span>
-    </div>
-  );
-}
-
 function SectionCard({
   title,
   items,
@@ -193,25 +184,6 @@ function FactActions({ factId }: { factId: string }) {
           Reject
         </button>
       </form>
-    </div>
-  );
-}
-
-function SrcChip({ source }: { source: SourceRow }) {
-  const tip = `${source.title || "Source"} — ${source.publisher}${source.year ? `, ${source.year}` : ""}`;
-  return (
-    <button className="src" data-url={source.url} data-tip={tip}>
-      <span className="src-dot">{source.publisher[0]}</span>
-      {source.publisher}
-    </button>
-  );
-}
-
-function EmptyState({ what }: { what: string }) {
-  return (
-    <div className="empty">
-      Nothing found — &ldquo;{what}&rdquo; was checked and came back empty. That&rsquo;s a valid
-      result, not an error.
     </div>
   );
 }

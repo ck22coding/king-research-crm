@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { Avatar, StatusPill, STATUS_LABEL, fmtDate, money, isDated } from "@/lib/format";
+import { Avatar, StatusPill, STATUS_LABEL, fmtDate, money, isDated, Attr, SrcChip, EmptyState } from "@/lib/format";
 import { markets, primaryTam, collectSources, type MarketFact, type MarketSource } from "@/lib/markets-data";
 
 // Ports crm-ui/index.html's marketPage()/collectSources() 1:1 as
@@ -206,64 +206,17 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
             <div className="card">
               <h3>Competitive landscape</h3>
               <div className="land">
-                <div>
-                  <h5>Leaders</h5>
-                  <div className="chips">
-                    {m.players.leaders.map((p) => (
-                      <span key={p} className="chip">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h5>Challengers</h5>
-                  <div className="chips">
-                    {m.players.challengers.map((p) => (
-                      <span key={p} className="chip">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-                <div>
-                  <h5>Recent entrants</h5>
-                  <div className="chips">
-                    {m.players.entrants.map((p) => (
-                      <span key={p} className="chip">
-                        {p}
-                      </span>
-                    ))}
-                  </div>
-                </div>
+                <ChipGroup label="Leaders" items={m.players.leaders} />
+                <ChipGroup label="Challengers" items={m.players.challengers} />
+                <ChipGroup label="Recent entrants" items={m.players.entrants} />
               </div>
-              <h5
-                style={{
-                  fontSize: 11,
-                  color: "var(--ink-3)",
-                  textTransform: "uppercase",
-                  letterSpacing: ".04em",
-                  margin: "12px 0 2px",
-                }}
-              >
-                Recent M&amp;A &amp; funding
-              </h5>
+              <h5>Recent M&amp;A &amp; funding</h5>
               {m.deals.length ? m.deals.map((d, i) => <ItemRow key={i} item={d} />) : <EmptyState what="recent deals" />}
             </div>
 
             <div className="card">
               <h3>Market dynamics</h3>
-              <h5
-                style={{
-                  fontSize: 11,
-                  color: "var(--ink-3)",
-                  textTransform: "uppercase",
-                  letterSpacing: ".04em",
-                  marginBottom: 6,
-                }}
-              >
-                Maturity stage
-              </h5>
+              <h5>Maturity stage</h5>
               <div className="steps">
                 {MATURITY_STAGES.map((s) => (
                   <div
@@ -318,11 +271,17 @@ export default async function MarketPage({ params }: { params: Promise<{ id: str
   );
 }
 
-function Attr({ k, v }: { k: string; v: React.ReactNode }) {
+function ChipGroup({ label, items }: { label: string; items: string[] }) {
   return (
-    <div className="attr">
-      <span className="k">{k}</span>
-      <span className="v">{v}</span>
+    <div>
+      <h5>{label}</h5>
+      <div className="chips">
+        {items.map((p) => (
+          <span key={p} className="chip">
+            {p}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
@@ -367,21 +326,3 @@ function SrcRow({ sources }: { sources: MarketSource[] }) {
   );
 }
 
-function SrcChip({ source }: { source: MarketSource }) {
-  const tip = `${source.title || "Source"} — ${source.publisher}${source.year ? `, ${source.year}` : ""}`;
-  return (
-    <button className="src" data-url={source.url} data-tip={tip}>
-      <span className="src-dot">{source.publisher[0]}</span>
-      {source.publisher}
-    </button>
-  );
-}
-
-function EmptyState({ what }: { what: string }) {
-  return (
-    <div className="empty">
-      Nothing found — &ldquo;{what}&rdquo; was checked and came back empty. That&rsquo;s a valid
-      result, not an error.
-    </div>
-  );
-}

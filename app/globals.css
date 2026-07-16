@@ -233,7 +233,8 @@
   .legend .sw{width:8px; height:8px; border-radius:2px; flex:none}
   .legend b{color:var(--ink); font-weight:500; font-variant-numeric:tabular-nums}
   .cols{display:grid; grid-template-columns:1fr 1fr; gap:16px}
-  .cols h5, .land h5{font-size:11px; color:var(--ink-3); font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px}
+  .cols h5, .land h5, .card > h5{font-size:11px; color:var(--ink-3); font-weight:600; text-transform:uppercase; letter-spacing:.04em; margin-bottom:6px}
+  .card > h5{margin:12px 0 6px}
   .land{display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:16px; margin-bottom:4px}
   .chips{display:flex; gap:6px; flex-wrap:wrap}
   .chip{font-size:12px; border:1px solid var(--border); background:var(--plane); border-radius:6px; padding:3px 8px; color:var(--ink)}
