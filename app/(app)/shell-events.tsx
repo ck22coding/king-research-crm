@@ -9,6 +9,19 @@ import { usePathname, useRouter } from "next/navigation";
 // location.hash). This is what lets every later page render plain
 // `<button data-url=...>` / `<tr data-href=...>` markup with zero per-row
 // React state — same DOM contract as the prototype, different renderer.
+// Reading-pane URLs come from the facts/sources tables — DB rows, not code.
+// A poisoned sources.url ("javascript:...") must never reach the iframe or
+// window.open, so only http(s) survives.
+function safeHttpUrl(raw: string | undefined): string | null {
+  if (!raw) return null;
+  try {
+    const u = new URL(raw);
+    return u.protocol === "http:" || u.protocol === "https:" ? u.href : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function ShellEvents() {
   const router = useRouter();
   const pathname = usePathname();
@@ -47,7 +60,8 @@ export default function ShellEvents() {
       const target = e.target as HTMLElement;
       const src = target.closest<HTMLElement>("[data-url]");
       if (src) {
-        openBrowser(src.dataset.url!);
+        const url = safeHttpUrl(src.dataset.url);
+        if (url) openBrowser(url);
         return;
       }
       const row = target.closest<HTMLElement>("[data-href]");
@@ -66,12 +80,15 @@ export default function ShellEvents() {
       if (e.key === "Enter") {
         let u = bpUrl.value.trim();
         if (u && !/^https?:\/\//.test(u)) u = "https://" + u;
-        bpUrl.value = u;
-        bpFrame.src = u;
+        const safe = safeHttpUrl(u);
+        if (!safe) return;
+        bpUrl.value = safe;
+        bpFrame.src = safe;
       }
     }
     function onExtClick() {
-      if (bpUrl.value) window.open(bpUrl.value, "_blank");
+      const safe = safeHttpUrl(bpUrl.value);
+      if (safe) window.open(safe, "_blank", "noopener,noreferrer");
     }
     function onHandleMousedown() {
       document.body.classList.add("dragging");

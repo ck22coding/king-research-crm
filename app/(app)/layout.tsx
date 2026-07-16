@@ -87,7 +87,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="bp-hint">
           Reading pane — <b>some sites block embedding</b> and load blank; use ↗ to open those in a full tab.
         </div>
-        <iframe id="bpFrame" title="Source reader"></iframe>
+        <iframe id="bpFrame" title="Source reader" sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
       </aside>
 
       <ShellEvents />

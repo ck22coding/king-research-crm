@@ -21,6 +21,7 @@ export default function RealtimeRefresh({ companyId }: { companyId?: string }) {
     const supabase = createClient();
     let cancelled = false;
     let channel: ReturnType<typeof supabase.channel> | undefined;
+    let authSub: { unsubscribe: () => void } | undefined;
 
     async function setup() {
       // @supabase/ssr's browser client (session lives in cookies) doesn't
@@ -33,6 +34,15 @@ export default function RealtimeRefresh({ companyId }: { companyId?: string }) {
       } = await supabase.auth.getSession();
       if (cancelled) return;
       supabase.realtime.setAuth(session?.access_token);
+
+      // Long-lived tabs: when the session token refreshes (hourly), hand the
+      // new JWT to the realtime socket too, or change events silently stop.
+      const {
+        data: { subscription },
+      } = supabase.auth.onAuthStateChange((_event, freshSession) => {
+        if (freshSession) supabase.realtime.setAuth(freshSession.access_token);
+      });
+      authSub = subscription;
 
       const refresh = () => router.refresh();
 
@@ -66,6 +76,7 @@ export default function RealtimeRefresh({ companyId }: { companyId?: string }) {
 
     return () => {
       cancelled = true;
+      authSub?.unsubscribe();
       if (channel) supabase.removeChannel(channel);
     };
   }, [companyId, router]);

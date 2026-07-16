@@ -6,6 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 // against Supabase's REST API, so this isn't a privilege escalation, just a
 // shortcut around hand-crafting @supabase/ssr's cookie wire format.
 export async function POST(request: Request) {
+  // Dead route unless the machine opts in by setting RUNNER_EMAIL (local dev
+  // and CI only — production env must never set it).
+  if (!process.env.RUNNER_EMAIL) {
+    return NextResponse.json({ error: "Not found" }, { status: 404 });
+  }
+
   const body = await request.json().catch(() => null);
   const email = body?.email;
   const password = body?.password;

@@ -4,11 +4,20 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 // The migration's "authenticated update" policy on facts is `using (true)` —
-// any signed-in user can approve/reject, so no can_enrich check here.
+// any signed-in user can approve/reject, so no can_enrich check here. The
+// .eq("status", "suggested") scopes this action to the one transition the UI
+// offers; server actions are directly callable, so don't trust the caller.
 export async function setFactStatus(factId: string, status: "approved" | "rejected") {
   const supabase = await createClient();
-  await supabase.from("facts").update({ status }).eq("id", factId);
-  revalidatePath("/(app)/companies/[id]", "page");
+  const { data, error } = await supabase
+    .from("facts")
+    .update({ status })
+    .eq("id", factId)
+    .eq("status", "suggested")
+    .select("company_id")
+    .single();
+  if (error || !data) return; // realtime refresh keeps stale UI honest
+  revalidatePath(`/companies/${data.company_id}`);
 }
 
 // Queues an enrichment run (Task 8). status defaults to 'queued' per the
@@ -23,6 +32,16 @@ export async function enrichCompany(companyId: string) {
   } = await supabase.auth.getUser();
   if (!user) return;
 
+  // ponytail: check-then-insert race is possible (no unique index on active
+  // jobs); harmless at this scale — the runner processes one job at a time.
+  const { data: active } = await supabase
+    .from("enrichment_jobs")
+    .select("id")
+    .eq("company_id", companyId)
+    .in("status", ["queued", "running"])
+    .limit(1);
+  if (active?.length) return;
+
   await supabase.from("enrichment_jobs").insert({ company_id: companyId, requested_by: user.id });
-  revalidatePath("/(app)/companies/[id]", "page");
+  revalidatePath(`/companies/${companyId}`);
 }
