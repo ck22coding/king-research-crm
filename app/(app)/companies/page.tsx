@@ -11,16 +11,36 @@ export default async function CompaniesPage() {
       .from("companies")
       .select("id, name, domain, ownership, status, updated_at")
       .order("updated_at", { ascending: false }),
-    // Which companies have a spinner-worthy job right now (Task 7).
-    supabase.from("enrichment_jobs").select("company_id").in("status", ["queued", "running"]),
+    // Each company's status pill keys off its LATEST job: queued/running →
+    // spinner, failed → loud red pill with the error. Fetched newest-first,
+    // reduced to first-per-company below.
+    supabase
+      .from("enrichment_jobs")
+      .select("company_id, status, error")
+      .order("created_at", { ascending: false }),
   ]);
 
-  const activeJobCompanyIds = [...new Set((jobs ?? []).map((j) => j.company_id))];
+  const latestJob = new Map<string, { status: string; error: string | null }>();
+  for (const j of jobs ?? []) {
+    if (!latestJob.has(j.company_id)) latestJob.set(j.company_id, j);
+  }
+  const activeJobCompanyIds = [...latestJob.entries()]
+    .filter(([, j]) => j.status === "queued" || j.status === "running")
+    .map(([id]) => id);
+  const failedJobErrors = Object.fromEntries(
+    [...latestJob.entries()]
+      .filter(([, j]) => j.status === "failed")
+      .map(([id, j]) => [id, j.error ?? "unknown error"]),
+  );
 
   return (
     <>
       <RealtimeRefresh />
-      <CompaniesTable companies={companies ?? []} activeJobCompanyIds={activeJobCompanyIds} />
+      <CompaniesTable
+        companies={companies ?? []}
+        activeJobCompanyIds={activeJobCompanyIds}
+        failedJobErrors={failedJobErrors}
+      />
     </>
   );
 }

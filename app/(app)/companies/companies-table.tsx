@@ -28,9 +28,11 @@ function matches(row: CompanyRow, q: string) {
 export default function CompaniesTable({
   companies,
   activeJobCompanyIds = [],
+  failedJobErrors = {},
 }: {
   companies: CompanyRow[];
   activeJobCompanyIds?: string[];
+  failedJobErrors?: Record<string, string>;
 }) {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -109,7 +111,17 @@ export default function CompaniesTable({
                 </td>
                 <td>{c.ownership}</td>
                 <td>
-                  <StatusPill status={effectiveStatus(c.status, activeJobCompanyIds.includes(c.id))} />
+                  {failedJobErrors[c.id] && !activeJobCompanyIds.includes(c.id) ? (
+                    // Loud failure: latest enrichment job failed — show it, with
+                    // the error on hover, instead of quietly falling back to the
+                    // company's pre-run status.
+                    <span className="status failed" title={failedJobErrors[c.id]}>
+                      <span className="dot"></span>
+                      Failed
+                    </span>
+                  ) : (
+                    <StatusPill status={effectiveStatus(c.status, activeJobCompanyIds.includes(c.id))} />
+                  )}
                 </td>
                 <td>{fmtDate(c.updated_at)}</td>
               </tr>
