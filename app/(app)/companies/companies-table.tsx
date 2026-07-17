@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { addCompany } from "./actions";
-import { Avatar, StatusPill, effectiveStatus, fmtDate } from "@/lib/format";
+import { Avatar, CompanyStatusPill, fmtDate } from "@/lib/format";
 import type { CompanyStatus } from "@/lib/supabase/database.types";
 
 export type CompanyRow = {
@@ -27,12 +27,10 @@ function matches(row: CompanyRow, q: string) {
 // client component fed by the server-fetched `companies` prop — no re-fetch.
 export default function CompaniesTable({
   companies,
-  activeJobCompanyIds = [],
-  failedJobErrors = {},
+  latestJobByCompany = {},
 }: {
   companies: CompanyRow[];
-  activeJobCompanyIds?: string[];
-  failedJobErrors?: Record<string, string>;
+  latestJobByCompany?: Record<string, { status: string; error: string | null }>;
 }) {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -111,17 +109,7 @@ export default function CompaniesTable({
                 </td>
                 <td>{c.ownership}</td>
                 <td>
-                  {failedJobErrors[c.id] && !activeJobCompanyIds.includes(c.id) ? (
-                    // Loud failure: latest enrichment job failed — show it, with
-                    // the error on hover, instead of quietly falling back to the
-                    // company's pre-run status.
-                    <span className="status failed" title={failedJobErrors[c.id]}>
-                      <span className="dot"></span>
-                      Failed
-                    </span>
-                  ) : (
-                    <StatusPill status={effectiveStatus(c.status, activeJobCompanyIds.includes(c.id))} />
-                  )}
+                  <CompanyStatusPill status={c.status} job={latestJobByCompany[c.id]} />
                 </td>
                 <td>{fmtDate(c.updated_at)}</td>
               </tr>

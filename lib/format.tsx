@@ -3,10 +3,16 @@
 import type { ReactNode } from "react";
 import type { CompanyStatus } from "./supabase/database.types";
 
-export const STATUS_LABEL: Record<CompanyStatus, string> = {
+// "failed" is a pill-only state (latest enrichment job failed), not a
+// companies.status value — the runner restores the company's own status on
+// failure and the job row carries the error.
+export type PillStatus = CompanyStatus | "failed";
+
+export const STATUS_LABEL: Record<PillStatus, string> = {
   ready: "Ready",
   in_progress: "In progress",
   queued: "Queued",
+  failed: "Failed",
 };
 
 // Spinner state (Task 7): in_progress-looking pill whenever the company is
@@ -16,13 +22,32 @@ export function effectiveStatus(status: CompanyStatus, hasActiveJob: boolean): C
   return hasActiveJob || status === "in_progress" ? "in_progress" : status;
 }
 
-export function StatusPill({ status }: { status: CompanyStatus }) {
+export function StatusPill({ status, title }: { status: PillStatus; title?: string }) {
   return (
-    <span className={`status ${status}`}>
+    <span className={`status ${status}`} title={title}>
       <span className="dot"></span>
       {STATUS_LABEL[status]}
     </span>
   );
+}
+
+// Pill for a company given its LATEST enrichment job: failed → loud red pill
+// with the error on hover; queued/running → spinner; otherwise the company's
+// own status. One derivation shared by the list and record pages so failure
+// surfacing can't drift between them.
+export function CompanyStatusPill({
+  status,
+  job,
+}: {
+  status: CompanyStatus;
+  job?: { status: string; error: string | null } | null;
+}) {
+  if (job?.status === "failed") {
+    // `||` (not ??): an empty-string error must still show the pill's fallback.
+    return <StatusPill status="failed" title={job.error || "unknown error"} />;
+  }
+  const active = job?.status === "queued" || job?.status === "running";
+  return <StatusPill status={effectiveStatus(status, active)} />;
 }
 
 const AVATAR_HUES = [

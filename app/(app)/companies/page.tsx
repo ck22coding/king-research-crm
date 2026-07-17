@@ -13,34 +13,26 @@ export default async function CompaniesPage() {
       .order("updated_at", { ascending: false }),
     // Each company's status pill keys off its LATEST job: queued/running →
     // spinner, failed → loud red pill with the error. Fetched newest-first,
-    // reduced to first-per-company below.
+    // reduced to first-per-company below. The explicit limit matches
+    // PostgREST's max_rows (which would silently cap us anyway); newest-first
+    // ordering means truncation only ever drops OLD rows, which the
+    // latest-per-company reduction never needed.
     supabase
       .from("enrichment_jobs")
       .select("company_id, status, error")
-      .order("created_at", { ascending: false }),
+      .order("created_at", { ascending: false })
+      .limit(1000),
   ]);
 
-  const latestJob = new Map<string, { status: string; error: string | null }>();
+  const latestJobByCompany: Record<string, { status: string; error: string | null }> = {};
   for (const j of jobs ?? []) {
-    if (!latestJob.has(j.company_id)) latestJob.set(j.company_id, j);
+    latestJobByCompany[j.company_id] ??= j;
   }
-  const activeJobCompanyIds = [...latestJob.entries()]
-    .filter(([, j]) => j.status === "queued" || j.status === "running")
-    .map(([id]) => id);
-  const failedJobErrors = Object.fromEntries(
-    [...latestJob.entries()]
-      .filter(([, j]) => j.status === "failed")
-      .map(([id, j]) => [id, j.error ?? "unknown error"]),
-  );
 
   return (
     <>
       <RealtimeRefresh />
-      <CompaniesTable
-        companies={companies ?? []}
-        activeJobCompanyIds={activeJobCompanyIds}
-        failedJobErrors={failedJobErrors}
-      />
+      <CompaniesTable companies={companies ?? []} latestJobByCompany={latestJobByCompany} />
     </>
   );
 }

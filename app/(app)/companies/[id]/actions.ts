@@ -4,17 +4,22 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 // The migration's "authenticated update" policy on facts is `using (true)` —
-// any signed-in user can approve/reject, so no can_enrich check here. The
-// .in("status", [...]) scopes this action to the transitions the UI offers:
-// suggested→approved/rejected, and approved→rejected (un-accept/"Remove").
-// Server actions are directly callable, so don't trust the caller.
-export async function setFactStatus(factId: string, status: "approved" | "rejected") {
+// any signed-in user can approve/reject, so no can_enrich check here.
+// `from` pins the transition to the state the button was RENDERED against:
+// a stale Reject (drawn while the fact was suggested, clicked after a
+// colleague approved it) must be a no-op, not a silent un-approval. Server
+// actions are directly callable, so don't trust the caller.
+export async function setFactStatus(
+  factId: string,
+  status: "approved" | "rejected",
+  from: "suggested" | "approved",
+) {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("facts")
     .update({ status })
     .eq("id", factId)
-    .in("status", ["suggested", "approved"])
+    .eq("status", from)
     .select("company_id")
     .single();
   if (error || !data) return; // realtime refresh keeps stale UI honest
@@ -34,7 +39,8 @@ export async function enrichCompany(companyId: string) {
   if (!user) return;
 
   // ponytail: check-then-insert race is possible (no unique index on active
-  // jobs); harmless at this scale — the runner processes one job at a time.
+  // jobs); harmless — the runner serializes jobs per company (in-process
+  // lock), so a duplicate just runs later and dedups to zero new facts.
   const { data: active } = await supabase
     .from("enrichment_jobs")
     .select("id")
