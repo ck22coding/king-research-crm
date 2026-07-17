@@ -9,11 +9,20 @@ import { createClient } from "@/lib/supabase/server";
 // a stale Reject (drawn while the fact was suggested, clicked after a
 // colleague approved it) must be a no-op, not a silent un-approval. Server
 // actions are directly callable, so don't trust the caller.
+// Runtime transition allowlist. `from` is caller-supplied and TypeScript
+// unions don't exist at runtime — a hand-crafted call must not move a fact
+// out of 'rejected' or invent transitions the UI never offers.
+const LEGAL_TRANSITIONS: Record<string, string[]> = {
+  suggested: ["approved", "rejected"],
+  approved: ["rejected"],
+};
+
 export async function setFactStatus(
   factId: string,
   status: "approved" | "rejected",
   from: "suggested" | "approved",
 ) {
+  if (!LEGAL_TRANSITIONS[from]?.includes(status)) return;
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("facts")
