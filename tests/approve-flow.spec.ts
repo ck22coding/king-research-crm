@@ -1,4 +1,4 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Browser } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 // Loaded again here (also done by playwright.config.ts / global-setup.ts) —
@@ -43,24 +43,28 @@ test.describe("approve / reject suggested facts", () => {
     if (approvedResetError) throw approvedResetError;
   });
 
-  test("approving a suggested fact persists as approved across reload", async ({
-    browser,
-    baseURL,
-  }) => {
-    // A dedicated, freshly-authenticated context rather than the shared
-    // `page` fixture's runner storageState. That storageState (one session,
-    // one refresh token) is copied into every parallel test file's context;
-    // Supabase rotates the refresh token on use, so concurrent contexts
-    // sharing it race and the loser gets logged out on its next request.
-    // This test reload()s, which would hit exactly that race under
-    // `fullyParallel`. Signing in fresh here gives it its own refresh-token
-    // lineage that no other test shares.
+  // A dedicated, freshly-authenticated context rather than the shared `page`
+  // fixture's runner storageState. That storageState (one session, one
+  // refresh token) is copied into every parallel test file's context;
+  // Supabase rotates the refresh token on use, so concurrent contexts
+  // sharing it race and the loser gets logged out on its next request. The
+  // tests here reload(), which would hit exactly that race under
+  // `fullyParallel`. Signing in fresh gives each its own refresh-token
+  // lineage that no other test shares.
+  async function freshPage(browser: Browser, baseURL: string | undefined) {
     const context = await browser.newContext({ baseURL });
     const auth = await context.request.post("/api/test-auth", {
       data: { email: process.env.RUNNER_EMAIL, password: process.env.RUNNER_PASSWORD },
     });
     if (!auth.ok()) throw new Error(`/api/test-auth failed: ${auth.status()} ${await auth.text()}`);
-    const page = await context.newPage();
+    return { context, page: await context.newPage() };
+  }
+
+  test("approving a suggested fact persists as approved across reload", async ({
+    browser,
+    baseURL,
+  }) => {
+    const { context, page } = await freshPage(browser, baseURL);
 
     await page.goto(`/companies/${WAYSTAR_ID}`);
 
@@ -92,13 +96,7 @@ test.describe("approve / reject suggested facts", () => {
     browser,
     baseURL,
   }) => {
-    // Same fresh-context rationale as the approve test above.
-    const context = await browser.newContext({ baseURL });
-    const auth = await context.request.post("/api/test-auth", {
-      data: { email: process.env.RUNNER_EMAIL, password: process.env.RUNNER_PASSWORD },
-    });
-    if (!auth.ok()) throw new Error(`/api/test-auth failed: ${auth.status()} ${await auth.text()}`);
-    const page = await context.newPage();
+    const { context, page } = await freshPage(browser, baseURL);
 
     await page.goto(`/companies/${WAYSTAR_ID}`);
 

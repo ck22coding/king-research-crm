@@ -63,8 +63,11 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
   if (!company) notFound();
 
   const latestJob = (jobs ?? [])[0] ?? null;
-  const active = latestJob?.status === "queued" || latestJob?.status === "running";
-  const status = effectiveStatus(company.status, active);
+  // Same derivation CompanyStatusPill uses — this copy feeds the rail Attr.
+  const briefStatus =
+    latestJob?.status === "failed"
+      ? ("failed" as const)
+      : effectiveStatus(company.status, latestJob?.status === "queued" || latestJob?.status === "running");
 
   const bySection = new Map<FactSection, FactRow[]>();
   for (const fact of (facts ?? []) as unknown as FactRow[]) {
@@ -113,7 +116,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             <Attr k="Domain" v={company.domain} />
             <Attr k="Ownership" v={company.ownership} />
             <Attr k="Headquarters" v={company.hq} />
-            <Attr k="Brief status" v={STATUS_LABEL[latestJob?.status === "failed" ? "failed" : status]} />
+            <Attr k="Brief status" v={STATUS_LABEL[briefStatus]} />
             <Attr k="Last updated" v={fmtDate(company.updated_at)} />
           </div>
           <div className="content">
@@ -179,7 +182,7 @@ function ItemRow({ item }: { item: FactRow }) {
         // Walks an approval back. Rejected facts are excluded from this
         // page's query, so this is effectively "remove."
         <div className="fact-actions">
-          <FactStatusButton factId={item.id} to="rejected" from="approved" variant="reject" label="Remove" />
+          <FactStatusButton factId={item.id} to="rejected" from="approved" label="Remove" />
         </div>
       )}
     </div>
@@ -192,18 +195,20 @@ function FactStatusButton({
   factId,
   to,
   from,
-  variant,
   label,
 }: {
   factId: string;
   to: "approved" | "rejected";
   from: "suggested" | "approved";
-  variant: "approve" | "reject";
   label: string;
 }) {
   return (
     <form>
-      <button type="submit" className={`btn ${variant}`} formAction={setFactStatus.bind(null, factId, to, from)}>
+      <button
+        type="submit"
+        className={`btn ${to === "approved" ? "approve" : "reject"}`}
+        formAction={setFactStatus.bind(null, factId, to, from)}
+      >
         {label}
       </button>
     </form>
@@ -216,8 +221,8 @@ function FactActions({ factId }: { factId: string }) {
   return (
     <div className="fact-actions">
       <span className="suggested-badge">Suggested</span>
-      <FactStatusButton factId={factId} to="approved" from="suggested" variant="approve" label="Approve" />
-      <FactStatusButton factId={factId} to="rejected" from="suggested" variant="reject" label="Reject" />
+      <FactStatusButton factId={factId} to="approved" from="suggested" label="Approve" />
+      <FactStatusButton factId={factId} to="rejected" from="suggested" label="Reject" />
     </div>
   );
 }

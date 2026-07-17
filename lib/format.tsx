@@ -6,7 +6,7 @@ import type { CompanyStatus } from "./supabase/database.types";
 // "failed" is a pill-only state (latest enrichment job failed), not a
 // companies.status value — the runner restores the company's own status on
 // failure and the job row carries the error.
-export type PillStatus = CompanyStatus | "failed";
+type PillStatus = CompanyStatus | "failed";
 
 export const STATUS_LABEL: Record<PillStatus, string> = {
   ready: "Ready",
