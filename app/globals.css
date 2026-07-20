@@ -85,6 +85,13 @@
   .btn:hover{background:var(--hover)}
   .btn.primary{background:var(--ink); color:#fff; border-color:var(--ink)}
   .btn.primary:hover{opacity:.9}
+  a.btn{text-decoration:none; display:inline-flex}
+  /* Genuinely-disabled gray (e.g. Download PDF pre-enrich) — flatter and
+     muted, distinct from the plain .btn's still-usable bordered-white gray
+     (e.g. Enrich post-enrich) so "can't click this" reads differently from
+     "secondary action". */
+  .btn[disabled]{cursor:not-allowed; color:var(--ink-3); background:var(--plane); border-color:var(--border); box-shadow:none}
+  .btn[disabled]:hover{background:var(--plane)}
 
   .tag-row{display:flex; gap:6px; padding:10px 16px 0; flex-wrap:wrap}
   .tag{
@@ -190,6 +197,9 @@
   .fact-actions .btn.approve{border-color:var(--good); color:var(--good-text)}
   .fact-actions .btn.approve:hover{background:var(--good-bg)}
   .fact-actions .btn.reject:hover{background:var(--hover)}
+
+  /* ---------- PDF report view (new in v1 — no prototype markup) ---------- */
+  .pdf-frame{width:100%; height:80vh; border:1px solid var(--border); border-radius:var(--radius); background:#fff}
 
   .empty{
     border:1px dashed var(--border-2); border-radius:8px; padding:12px;

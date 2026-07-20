@@ -83,7 +83,9 @@ test.describe.serial("capstone: enrich flow with stubbed suggested-fact insert",
     // with its own warm-up wait (see realtime-smoke.spec.ts).
     test.setTimeout(90000);
 
-    await page.goto(`/companies/${companyId}`);
+    // Source view — this test drives the fact list (Approve button, .item
+    // rows), which PDF report (now the default view) doesn't render.
+    await page.goto(`/companies/${companyId}?view=source`);
     const pill = page.locator(".toolbar .status");
     await expect(pill).not.toHaveClass(/in_progress/);
 

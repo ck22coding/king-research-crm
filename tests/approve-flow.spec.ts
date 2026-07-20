@@ -66,7 +66,9 @@ test.describe("approve / reject suggested facts", () => {
   }) => {
     const { context, page } = await freshPage(browser, baseURL);
 
-    await page.goto(`/companies/${WAYSTAR_ID}`);
+    // Source view — this test drives the fact list (.item, Approve/Remove),
+    // which PDF report (now the default view) doesn't render.
+    await page.goto(`/companies/${WAYSTAR_ID}?view=source`);
 
     const item = page.locator(".item", { hasText: FACT_TEXT });
     await expect(item).toBeVisible();
@@ -98,7 +100,9 @@ test.describe("approve / reject suggested facts", () => {
   }) => {
     const { context, page } = await freshPage(browser, baseURL);
 
-    await page.goto(`/companies/${WAYSTAR_ID}`);
+    // Source view — this test drives the fact list (.item, Approve/Remove),
+    // which PDF report (now the default view) doesn't render.
+    await page.goto(`/companies/${WAYSTAR_ID}?view=source`);
 
     const item = page.locator(".item", { hasText: APPROVED_FACT_TEXT });
     await expect(item).toBeVisible();

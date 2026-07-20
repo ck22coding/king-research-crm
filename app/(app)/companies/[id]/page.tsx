@@ -38,8 +38,27 @@ type FactRow = {
   sources: SourceRow[];
 };
 
-export default async function CompanyPage({ params }: { params: Promise<{ id: string }> }) {
+// PDF pivot (BUILD.md §E): the record page gets a view switcher. PDF report
+// is the default; Source is today's fact list, unchanged below. History
+// (all facts ever found, ignoring freshness windows/removed state) isn't
+// built yet — it's a stub tab only, out of scope for this task.
+type View = "pdf" | "source" | "history";
+
+function parseView(raw: string | undefined): View {
+  if (raw === "source" || raw === "history") return raw;
+  return "pdf";
+}
+
+export default async function CompanyPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ id: string }>;
+  searchParams: Promise<{ view?: string }>;
+}) {
   const { id } = await params;
+  const { view: viewParam } = await searchParams;
+  const view = parseView(viewParam);
   const supabase = await createClient();
 
   const [{ data: company }, { data: facts }, { data: jobs }] = await Promise.all([
@@ -76,6 +95,12 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
     bySection.set(fact.section, list);
   }
 
+  // The runner only sets tldr on a company's first successful enrichment
+  // (see runner/ "on success: ... save newsroom_url and tldr") — a company
+  // added but never enriched has tldr null, which is the signal both the
+  // Download button and the PDF view key off of.
+  const hasBeenEnriched = Boolean(company.tldr);
+
   return (
     <>
       <RealtimeRefresh companyId={company.id} />
@@ -86,10 +111,29 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
         </span>
         <span className="spacer"></span>
         <form>
-          <button type="submit" className="btn primary" formAction={enrichCompany.bind(null, company.id)}>
+          {/* Not yet enriched: Enrich is the primary (black) action. Once
+              enriched it's still fully clickable (re-runs to pull fresher
+              info) but drops to secondary gray so Download reads as primary. */}
+          <button
+            type="submit"
+            className={hasBeenEnriched ? "btn" : "btn primary"}
+            formAction={enrichCompany.bind(null, company.id)}
+          >
             Enrich
           </button>
         </form>
+        {hasBeenEnriched ? (
+          <a className="btn primary" href={`/companies/${company.id}/pdf`} download={`${company.name}.pdf`}>
+            Download PDF
+          </a>
+        ) : (
+          // Genuinely disabled (native `disabled` — not just styled to look
+          // it): there's no report to download until the company has been
+          // enriched at least once.
+          <button type="button" className="btn" disabled aria-disabled="true" title="Enrich this company first">
+            Download PDF
+          </button>
+        )}
         <CompanyStatusPill status={company.status} job={latestJob} />
       </div>
       <div className="scroll">
@@ -110,6 +154,7 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             </div>
           </div>
         </div>
+        <ViewTabs companyId={company.id} view={view} />
         <div className="rec-body">
           <div className="rail">
             <h4>Record details</h4>
@@ -120,23 +165,61 @@ export default async function CompanyPage({ params }: { params: Promise<{ id: st
             <Attr k="Last updated" v={fmtDate(company.updated_at)} />
           </div>
           <div className="content">
-            <div className="card">
-              <h3>TL;DR</h3>
-              <div className="tldr">{company.tldr}</div>
-            </div>
-            {SECTIONS.map((section) => (
-              <SectionCard
-                key={section.slug}
-                title={section.title}
-                items={bySection.get(section.slug) ?? []}
-                whatIfEmpty={section.whatIfEmpty}
-              />
-            ))}
+            {view === "pdf" && <PdfReportPane companyId={company.id} hasBeenEnriched={hasBeenEnriched} />}
+            {view === "history" && (
+              <div className="empty">
+                History isn&rsquo;t built yet — it will show every fact ever found for this
+                company, ignoring freshness windows and removed state.
+              </div>
+            )}
+            {view === "source" && (
+              <>
+                <div className="card">
+                  <h3>TL;DR</h3>
+                  <div className="tldr">{company.tldr}</div>
+                </div>
+                {SECTIONS.map((section) => (
+                  <SectionCard
+                    key={section.slug}
+                    title={section.title}
+                    items={bySection.get(section.slug) ?? []}
+                    whatIfEmpty={section.whatIfEmpty}
+                  />
+                ))}
+              </>
+            )}
           </div>
         </div>
       </div>
     </>
   );
+}
+
+// PDF report / Source / History switcher. Plain server-rendered buttons on
+// the shared data-href contract (ShellEvents' click delegation) — same
+// pattern as the crumbs/nav-item, no client component needed for a nav.
+function ViewTabs({ companyId, view }: { companyId: string; view: View }) {
+  return (
+    <div className="tag-row">
+      <button className={`tag ${view === "pdf" ? "on" : ""}`} data-href={`/companies/${companyId}`}>
+        PDF report
+      </button>
+      <button className={`tag ${view === "source" ? "on" : ""}`} data-href={`/companies/${companyId}?view=source`}>
+        Source
+      </button>
+      {/* Stub — no data-href, so it's inert rather than a dead link. */}
+      <span className="tag" style={{ opacity: 0.5, cursor: "not-allowed" }} title="Coming soon">
+        History
+      </span>
+    </div>
+  );
+}
+
+function PdfReportPane({ companyId, hasBeenEnriched }: { companyId: string; hasBeenEnriched: boolean }) {
+  if (!hasBeenEnriched) {
+    return <div className="empty">No PDF yet — click Enrich to generate this company&rsquo;s report.</div>;
+  }
+  return <iframe className="pdf-frame" src={`/companies/${companyId}/pdf`} title="PDF report" />;
 }
 
 function SectionCard({

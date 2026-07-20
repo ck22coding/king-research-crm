@@ -18,7 +18,8 @@ const SECTION_TITLES = [
 
 test.describe("company record page", () => {
   test("shows TL;DR and all 8 sections in order", async ({ page }) => {
-    await page.goto(`/companies/${WAYSTAR_ID}`);
+    // Source view — PDF report is now the default view (tests/pdf-report.spec.ts).
+    await page.goto(`/companies/${WAYSTAR_ID}?view=source`);
 
     // TL;DR is the first card, non-empty.
     const tldr = page.locator(".tldr");
@@ -37,7 +38,7 @@ test.describe("company record page", () => {
   test("clicking a source chip in News opens the reading pane on that source's url", async ({
     page,
   }) => {
-    await page.goto(`/companies/${WAYSTAR_ID}`);
+    await page.goto(`/companies/${WAYSTAR_ID}?view=source`);
 
     const newsCard = page.locator(".card", { has: page.locator("h3", { hasText: "News & announcements" }) });
     const chip = newsCard.locator(".src").first();
@@ -53,7 +54,7 @@ test.describe("company record page", () => {
   test("R1 RCM renders the 'Nothing found' empty state for its empty sections", async ({
     page,
   }) => {
-    await page.goto(`/companies/${R1_RCM_ID}`);
+    await page.goto(`/companies/${R1_RCM_ID}?view=source`);
 
     // Seed leaves regulatory/segmentation/market_sizing empty for R1 RCM.
     await expect(page.getByText("Nothing found").first()).toBeVisible();
