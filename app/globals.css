@@ -198,6 +198,15 @@
   .fact-actions .btn.approve:hover{background:var(--good-bg)}
   .fact-actions .btn.reject:hover{background:var(--hover)}
 
+  /* ---------- History view: removed facts (new — no prototype markup) ---------- */
+  .item.removed{opacity:.6}
+  .item.removed .txt{text-decoration:line-through; text-decoration-color:var(--ink-3)}
+  .removed-badge{
+    font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.04em;
+    color:var(--bad-text); background:var(--bg); border:1px solid var(--bad);
+    border-radius:999px; padding:2px 8px;
+  }
+
   /* ---------- PDF report view (new in v1 — no prototype markup) ---------- */
   .pdf-frame{width:100%; height:80vh; border:1px solid var(--border); border-radius:var(--radius); background:#fff}
 

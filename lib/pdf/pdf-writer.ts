@@ -1,107 +1,145 @@
-// Minimal, dependency-free PDF byte writer.
-//
-// Why hand-rolled instead of a library: the repo's PDF tooling (`~/.claude/skills/pdf`,
-// `make-pdf`) is Python + a headless-browser/LaTeX pipeline meant for interactive
-// Claude Code sessions, not something a Vercel serverless route can shell out to.
-// The obvious JS alternative (puppeteer/playwright rendering HTML->PDF) means
-// shipping a Chromium binary in a serverless function — the definition of a
-// heavy new dependency for a report that's plain text with no images/charts.
-// A report this simple (flowing headings + bullets, one standard font, 2-page
-// cap) is one of the best-known "just write the PDF bytes" cases, so that's
-// what this does: no new package, ~150 lines, valid output any PDF viewer opens.
-//
-// ponytail: no images, no embedded fonts (uses the 14 standard PDF fonts —
-// Helvetica/Helvetica-Bold — so Latin-1 only), word-wrap by an estimated
-// average glyph width rather than real font metrics. Upgrade to pdf-lib (or
-// the skills above, called at build time instead of request time) if the
-// report ever needs tables, charts, or exact typographic fit.
+// PDF report writer — measurement/pagination wrapper around `pdf-lib`.
+// Why pdf-lib and not a flow engine: BUILD.md §F.
+
+import {
+  PDFDocument,
+  PDFFont,
+  PDFPage,
+  StandardFonts,
+  TextAlignment,
+  layoutMultilineText,
+} from "pdf-lib";
 
 export type FontName = "Helvetica" | "Helvetica-Bold";
+
+export type FitVerdict = "fits" | "oversized" | "exhausted";
 
 const PAGE_WIDTH = 612; // US Letter, points
 const PAGE_HEIGHT = 792;
 const MARGIN = 54;
 const CONTENT_WIDTH = PAGE_WIDTH - MARGIN * 2;
 const CONTENT_BOTTOM = MARGIN;
-const MAX_PAGES = 2; // hard cap — the spec's "never spill past 2 pages"
+const FULL_PAGE_CAPACITY = PAGE_HEIGHT - MARGIN - CONTENT_BOTTOM;
+export const MAX_PAGES = 2; // hard cap — the spec's "never spill past 2 pages"
 
-// The 14 standard PDF fonts only carry Latin-1 (WinAnsi-ish) glyphs. Rather
-// than emit bytes that corrupt the string, normalize common "smart" chars
-// news copy tends to use and drop anything else.
-function sanitize(text: string): string {
-  return text
-    .replace(/[‘’]/g, "'")
-    .replace(/[“”]/g, '"')
-    .replace(/[–—]/g, "-")
-    .replace(/…/g, "...")
-    .replace(/[^\x00-\xff]/g, "?");
-}
+type TextOpts = { font?: FontName; size?: number };
 
-function escapePdfString(text: string): string {
-  return sanitize(text).replace(/\\/g, "\\\\").replace(/\(/g, "\\(").replace(/\)/g, "\\)");
-}
-
-// Helvetica averages ~0.5em per character for mixed-case prose. 0.52 leans
-// conservative (slightly shorter lines) so wrapped text doesn't visually run
-// past the right margin for wide glyphs (M, W, m) — safe over exact.
-const AVG_CHAR_WIDTH_EM = 0.52;
-
-function wrapLine(text: string, fontSize: number, maxWidth: number): string[] {
-  const maxChars = Math.max(10, Math.floor(maxWidth / (fontSize * AVG_CHAR_WIDTH_EM)));
-  const words = text.split(/\s+/).filter(Boolean);
-  const lines: string[] = [];
-  let current = "";
-  for (const word of words) {
-    const next = current ? `${current} ${word}` : word;
-    if (next.length > maxChars && current) {
-      lines.push(current);
-      current = word;
-    } else {
-      current = next;
-    }
+// WinAnsi already covers the smart quotes/dashes news copy uses, so probe
+// with the real font and fall back to '?' only for glyphs it can't draw.
+function sanitize(font: PDFFont, text: string): string {
+  try {
+    font.widthOfTextAtSize(text, 10);
+    return text;
+  } catch {
+    return Array.from(text)
+      .map((ch) => {
+        try {
+          font.widthOfTextAtSize(ch, 10);
+          return ch;
+        } catch {
+          return "?";
+        }
+      })
+      .join("");
   }
-  lines.push(current);
-  return lines.length ? lines : [""];
 }
 
-type TextOpts = { font?: FontName; size?: number; lineHeight?: number };
-
-// Builds a flowing, at-most-2-page PDF: call `.text()`/`.spacer()` in the
-// order content should appear; once page 2 runs out of vertical room, further
-// writes are silently dropped (no 3rd page, ever) rather than overflowing.
+// Builds an at-most-2-page PDF; writes past the cap are silently dropped.
 export class PdfDoc {
-  private pages: string[][] = [[]];
-  private y = PAGE_HEIGHT - MARGIN;
+  private page!: PDFPage;
+  private y = 0;
+  private pages = 0;
   private full = false;
 
+  private constructor(
+    private readonly doc: PDFDocument,
+    private readonly fonts: Record<FontName, PDFFont>,
+  ) {}
+
+  static async create(): Promise<PdfDoc> {
+    const doc = await PDFDocument.create();
+    const fonts: Record<FontName, PDFFont> = {
+      Helvetica: await doc.embedFont(StandardFonts.Helvetica),
+      "Helvetica-Bold": await doc.embedFont(StandardFonts.HelveticaBold),
+    };
+    const pdfDoc = new PdfDoc(doc, fonts);
+    pdfDoc.newPage();
+    return pdfDoc;
+  }
+
   private newPage(): boolean {
-    if (this.pages.length >= MAX_PAGES) return false;
-    this.pages.push([]);
+    if (this.pages >= MAX_PAGES) return false;
+    this.page = this.doc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+    this.pages += 1;
     this.y = PAGE_HEIGHT - MARGIN;
     return true;
   }
 
-  private writeLine(text: string, font: FontName, size: number, lineHeight: number): boolean {
-    if (this.y - lineHeight < CONTENT_BOTTOM) {
-      if (this.full || !this.newPage()) {
-        this.full = true;
-        return false;
-      }
-    }
-    this.y -= lineHeight;
-    const fontKey = font === "Helvetica-Bold" ? "F2" : "F1";
-    this.pages[this.pages.length - 1].push(
-      `BT 1 0 0 1 ${MARGIN} ${this.y.toFixed(1)} Tm /${fontKey} ${size} Tf (${escapePdfString(text)}) Tj ET`,
-    );
-    return true;
+  // Exact glyph widths via pdf-lib's layout engine, not estimated.
+  private measure(font: FontName, text: string, size: number): { lines: string[]; lineHeight: number } {
+    const f = this.fonts[font];
+    const layout = layoutMultilineText(sanitize(f, text) || " ", {
+      alignment: TextAlignment.Left,
+      fontSize: size,
+      font: f,
+      bounds: { x: 0, y: 0, width: CONTENT_WIDTH, height: 1_000_000 },
+    });
+    return { lines: layout.lines.map((l) => l.text), lineHeight: layout.lineHeight };
   }
 
-  // Word-wraps and writes `text`; returns false once the page budget is gone
-  // (callers don't need to check this — remaining sections just render empty
-  // space, which is fine for a hard-capped report).
-  text(text: string, { font = "Helvetica", size = 9, lineHeight = size * 1.4 }: TextOpts = {}): boolean {
-    for (const line of wrapLine(text, size, CONTENT_WIDTH)) {
-      if (!this.writeLine(line, font, size, lineHeight)) return false;
+  // "current": fits in the room left on this page as-is.
+  // "fresh": doesn't fit here, but fits atomically on a brand-new page.
+  // "oversized": bigger than a full page — no single page can hold it whole.
+  private placement(needed: number): "current" | "fresh" | "oversized" {
+    if (this.y - needed >= CONTENT_BOTTOM) return "current";
+    if (needed <= FULL_PAGE_CAPACITY) return "fresh";
+    return "oversized";
+  }
+
+  // "oversized": this block alone is bigger than a full page — skip just
+  // this item and keep going. "exhausted": the 2-page budget is spent —
+  // stop. Draws nothing either way.
+  fitVerdict(text: string, { font = "Helvetica", size = 9 }: TextOpts = {}): FitVerdict {
+    if (this.full) return "exhausted";
+    const { lines, lineHeight } = this.measure(font, text, size);
+    const verdict = this.placement(lines.length * lineHeight);
+    if (verdict === "oversized") return "oversized";
+    if (verdict === "current") return "fits";
+    return this.pages < MAX_PAGES ? "fits" : "exhausted";
+  }
+
+  // Keeps a heading atomic with its first content line, so we never draw
+  // an orphan heading with nothing beneath it. Draws nothing.
+  fitsWithContent(heading: string, opts: TextOpts = {}): boolean {
+    if (this.full) return false;
+    const { font = "Helvetica", size = 9 } = opts;
+    const { lines, lineHeight } = this.measure(font, heading, size);
+    const contentLineHeight = this.measure("Helvetica", "x", 9).lineHeight;
+    const verdict = this.placement(lines.length * lineHeight + contentLineHeight);
+    if (verdict === "oversized") return false;
+    return verdict === "current" || this.pages < MAX_PAGES;
+  }
+
+  // Places blocks atomically; an oversized paragraph is the one case that
+  // must degrade line-by-line to hold the 2-page cap.
+  text(text: string, { font = "Helvetica", size = 9 }: TextOpts = {}): boolean {
+    if (this.full) return false;
+    const { lines, lineHeight } = this.measure(font, text, size);
+    const needed = lines.length * lineHeight;
+    if (this.placement(needed) === "fresh" && (this.full || !this.newPage())) {
+      this.full = true;
+      return false;
+    }
+    const f = this.fonts[font];
+    for (const line of lines) {
+      if (this.y - lineHeight < CONTENT_BOTTOM) {
+        if (this.full || !this.newPage()) {
+          this.full = true;
+          return false;
+        }
+      }
+      this.y -= lineHeight;
+      this.page.drawText(line, { x: MARGIN, y: this.y, size, font: f });
     }
     return true;
   }
@@ -110,46 +148,11 @@ export class PdfDoc {
     this.y = Math.max(CONTENT_BOTTOM, this.y - height);
   }
 
-  get pageCount() {
-    return this.pages.length;
+  get pageCount(): number {
+    return this.pages;
   }
 
-  toBytes(): Buffer {
-    const pageCount = this.pages.length;
-    const fontF1Id = 3 + pageCount * 2;
-    const fontF2Id = fontF1Id + 1;
-
-    const objects: string[] = [];
-    objects.push("<< /Type /Catalog /Pages 2 0 R >>");
-    const kids = Array.from({ length: pageCount }, (_, i) => `${3 + i} 0 R`).join(" ");
-    objects.push(`<< /Type /Pages /Kids [${kids}] /Count ${pageCount} >>`);
-    for (let i = 0; i < pageCount; i++) {
-      const contentId = 3 + pageCount + i;
-      objects.push(
-        `<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${PAGE_WIDTH} ${PAGE_HEIGHT}] ` +
-          `/Resources << /Font << /F1 ${fontF1Id} 0 R /F2 ${fontF2Id} 0 R >> >> /Contents ${contentId} 0 R >>`,
-      );
-    }
-    for (let i = 0; i < pageCount; i++) {
-      const stream = this.pages[i].join("\n");
-      objects.push(`<< /Length ${Buffer.byteLength(stream, "latin1")} >>\nstream\n${stream}\nendstream`);
-    }
-    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>");
-    objects.push("<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold >>");
-
-    let body = "%PDF-1.4\n";
-    const offsets: number[] = [];
-    objects.forEach((obj, idx) => {
-      offsets.push(Buffer.byteLength(body, "latin1"));
-      body += `${idx + 1} 0 obj\n${obj}\nendobj\n`;
-    });
-    const xrefOffset = Buffer.byteLength(body, "latin1");
-    const total = objects.length + 1;
-    let xref = `xref\n0 ${total}\n0000000000 65535 f \n`;
-    for (const off of offsets) xref += `${String(off).padStart(10, "0")} 00000 n \n`;
-    body += xref;
-    body += `trailer\n<< /Size ${total} /Root 1 0 R >>\nstartxref\n${xrefOffset}\n%%EOF`;
-
-    return Buffer.from(body, "latin1");
+  async toBytes(): Promise<Uint8Array> {
+    return this.doc.save();
   }
 }

@@ -9,34 +9,48 @@ process.loadEnvFile("/Users/carterking/Projects/dad/.env");
 // Waystar: seeded 'ready' with a tldr — the "has been enriched" fixture.
 const WAYSTAR_ID = "c0000000-0000-4000-8000-000000000001";
 
-// Same find-or-create fixture as tests/enrich-e2e.spec.ts. Nothing in this
-// file ever sets its tldr, so it stays null across runs — the stable "never
-// enriched" fixture for the disabled-Download-button case.
-const NOT_ENRICHED_NAME = "E2E Test Co";
-const NOT_ENRICHED_DOMAIN = "e2e-test.example";
+// Owned by this spec, with its own domain — deliberately NOT the
+// e2e-test.example company from tests/enrich-e2e.spec.ts. Playwright runs
+// one worker but `fullyParallel: true` means file execution order isn't a
+// fixture contract, so this file finds-or-creates its own row rather than
+// depending on another spec having run first. Nothing here ever sets its
+// tldr, so it stays null across runs — the stable "never enriched" fixture.
+const NOT_ENRICHED_NAME = "PDF Report Test Co";
+const NOT_ENRICHED_DOMAIN = "pdf-report-test.example";
 
-async function findNotEnrichedCompanyId(): Promise<string> {
+let notEnrichedCompanyId: string;
+
+test.beforeAll(async () => {
   const runner = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL!, process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!);
-  const { error: authError } = await runner.auth.signInWithPassword({
+  const { data: auth, error: authError } = await runner.auth.signInWithPassword({
     email: process.env.RUNNER_EMAIL!,
     password: process.env.RUNNER_PASSWORD!,
   });
   if (authError) throw authError;
 
-  const { data, error } = await runner.from("companies").select("id").eq("domain", NOT_ENRICHED_DOMAIN).maybeSingle();
+  const { data: existing, error } = await runner
+    .from("companies")
+    .select("id")
+    .eq("domain", NOT_ENRICHED_DOMAIN)
+    .maybeSingle();
   if (error) throw error;
-  if (!data) {
-    throw new Error(
-      `"${NOT_ENRICHED_NAME}" fixture company not found — run enrich-e2e.spec.ts first (it creates it via the Add-company UI).`,
-    );
+  if (existing) {
+    notEnrichedCompanyId = existing.id;
+    return;
   }
-  return data.id;
-}
+
+  const { data: created, error: insertError } = await runner
+    .from("companies")
+    .insert({ name: NOT_ENRICHED_NAME, domain: NOT_ENRICHED_DOMAIN, created_by: auth.user!.id })
+    .select("id")
+    .single();
+  if (insertError) throw insertError;
+  notEnrichedCompanyId = created.id;
+});
 
 test.describe("Download PDF / Enrich button state machine", () => {
   test("pre-enrich: Download is genuinely disabled with a tooltip, Enrich is primary", async ({ page }) => {
-    const companyId = await findNotEnrichedCompanyId();
-    await page.goto(`/companies/${companyId}`);
+    await page.goto(`/companies/${notEnrichedCompanyId}`);
 
     const download = page.getByRole("button", { name: "Download PDF" });
     await expect(download).toBeVisible();
@@ -93,11 +107,16 @@ test.describe("PDF report / Source view switch", () => {
     await expect(page.locator("iframe.pdf-frame")).toHaveCount(0);
   });
 
-  test("History tab is a non-navigating stub", async ({ page }) => {
+  test("History tab navigates to the archive view", async ({ page }) => {
     await page.goto(`/companies/${WAYSTAR_ID}`);
-    const history = page.locator(".tag", { hasText: "History" });
+    const history = page.locator("button.tag", { hasText: "History" });
     await expect(history).toBeVisible();
-    await expect(history).not.toHaveAttribute("data-href", /.+/);
+    await expect(history).toHaveAttribute("data-href", `/companies/${WAYSTAR_ID}?view=history`);
+
+    await history.click();
+    await expect(page).toHaveURL(/view=history/);
+    await expect(page.locator("button.tag", { hasText: "History" })).toHaveClass(/\bon\b/);
+    await expect(page.locator("iframe.pdf-frame")).toHaveCount(0);
   });
 });
 
@@ -111,5 +130,14 @@ test.describe("PDF generation route", () => {
     const body = await res.body();
     expect(body.subarray(0, 5).toString("latin1")).toBe("%PDF-");
     expect(body.subarray(-6).toString("latin1").trim()).toBe("%%EOF");
+  });
+
+  test("GET /companies/:id/pdf 404s for a company that hasn't been enriched yet", async ({ request }) => {
+    // "Not enriched" = no report is the product invariant behind the
+    // disabled Download button — direct navigation must not fabricate a
+    // placeholder PDF.
+    const res = await request.get(`/companies/${notEnrichedCompanyId}/pdf`);
+    expect(res.status()).toBe(404);
+    expect(res.headers()["content-type"]).not.toContain("application/pdf");
   });
 });

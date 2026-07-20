@@ -1,18 +1,8 @@
-// Data-driven config for the 2-page PDF report — see
-// company-preview/pdf-report-spec-DRAFT.md for the content spec (still
-// pending Eric's final sign-off) and BUILD.md's "PDF pivot" §A for the
-// approved 7-category refactor. Section order/titles/caps live in one array
-// (REPORT_SECTIONS) so the layout can change without touching the renderer.
+// Report section config — order/titles/caps in one array so layout changes
+// don't touch the renderer. See BUILD.md "PDF pivot" §A for the spec.
 //
-// Schema note: `facts.section` in the live DB is still the OLD 8-slug schema
-// (see supabase/migrations/20260715120000_initial_schema.sql) — the 7-category
-// migration described in BUILD.md hasn't landed yet. DB_SECTION_TO_REPORT_SECTION
-// below is the tolerant bridge: it maps what already exists in the DB onto the
-// new report sections, and simply omits anything the old schema has no home
-// for (segmentation, market_sizing — dropped per BUILD.md; acquisitions &
-// partnerships — new, no source data yet, renders honestly empty). Once the
-// migration lands and `facts.section` speaks the 7 slugs directly, delete this
-// mapping and read `fact.section` straight through.
+// `facts.section` in the DB is still the old 8-slug schema; the mapping
+// below bridges it to the 7 report sections until that migration lands.
 
 import { fmtDate } from "@/lib/format";
 import type { FactSection } from "@/lib/supabase/database.types";
@@ -37,9 +27,8 @@ export const REPORT_SECTIONS: { slug: ReportSectionSlug; title: string; maxItems
   { slug: "risk_flags", title: "Risk Flags", maxItems: 3 },
 ];
 
-// Old slug -> new report section. `regulatory` folds into News per BUILD.md
-// §A ("drop, folds into News"). `segmentation`/`market_sizing` have no entry
-// — dropped from the PDF entirely (they still show in the Source view).
+// `regulatory` folds into News; `segmentation`/`market_sizing` have no
+// entry — dropped from the PDF (still shown in the Source view).
 export const DB_SECTION_TO_REPORT_SECTION: Partial<Record<FactSection, ReportSectionSlug>> = {
   leadership: "leadership",
   news: "news",
@@ -55,11 +44,15 @@ export type ReportFact = {
   sources: { publisher: string }[];
 };
 
-// Newest-first, nulls last, capped to each section's maxItems — the spec's
-// "chronological order, top items only".
-export function mapFactsToReportSections(
-  facts: { section: FactSection; text: string; fact_date: string | null; sources: { publisher: string }[] }[],
-): Record<ReportSectionSlug, ReportFact[]> {
+export type FactForReport = {
+  section: FactSection;
+  text: string;
+  fact_date: string | null;
+  sources: { publisher: string }[];
+};
+
+// Newest-first, nulls last, capped to each section's maxItems.
+export function mapFactsToReportSections(facts: FactForReport[]): Record<ReportSectionSlug, ReportFact[]> {
   const bySlug: Partial<Record<ReportSectionSlug, ReportFact[]>> = {};
   for (const fact of facts) {
     const target = DB_SECTION_TO_REPORT_SECTION[fact.section];
@@ -68,9 +61,9 @@ export function mapFactsToReportSections(
   }
   const result = {} as Record<ReportSectionSlug, ReportFact[]>;
   for (const section of REPORT_SECTIONS) {
-    const list = bySlug[section.slug] ?? [];
-    list.sort((a, b) => (b.fact_date ?? "").localeCompare(a.fact_date ?? ""));
-    result[section.slug] = list.slice(0, section.maxItems);
+    result[section.slug] = (bySlug[section.slug] ?? [])
+      .sort((a, b) => (b.fact_date ?? "").localeCompare(a.fact_date ?? ""))
+      .slice(0, section.maxItems);
   }
   return result;
 }
@@ -89,7 +82,10 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
   doc.spacer(10);
 
   for (const section of REPORT_SECTIONS) {
-    doc.text(section.title, { font: "Helvetica-Bold", size: 12 });
+    // Skip headings that would have nothing (that fits) beneath them.
+    const headingOpts = { font: "Helvetica-Bold" as const, size: 12 };
+    if (!doc.fitsWithContent(section.title, headingOpts)) continue;
+    doc.text(section.title, headingOpts);
 
     if (section.slug === "company_summary") {
       doc.text(data.tldr || "No summary yet — enrich this company to generate one.", { size: 9 });
@@ -103,7 +99,13 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
     } else {
       for (const item of items) {
         const date = item.fact_date ? ` (${fmtDate(item.fact_date)})` : "";
-        doc.text(`- ${item.text}${date}`, { size: 9 });
+        const line = `- ${item.text}${date}`;
+        // oversized skips just this item (older ones may still fit);
+        // exhausted stops the section (BUILD.md §B: drop lowest-ranked first).
+        const verdict = doc.fitVerdict(line, { size: 9 });
+        if (verdict === "oversized") continue;
+        if (verdict === "exhausted") break;
+        doc.text(line, { size: 9 });
       }
     }
     doc.spacer(8);

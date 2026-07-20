@@ -1,18 +1,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { PdfDoc } from "@/lib/pdf/pdf-writer";
 import { mapFactsToReportSections, renderCompanyReport } from "@/lib/pdf/report";
-import type { FactSection } from "@/lib/supabase/database.types";
 
-// Node runtime (not Edge) — the writer uses Buffer for byte-exact /Length
-// values and offsets.
+// Node runtime (not Edge) — pdf-lib works in both, but this keeps parity
+// with the rest of the app's server routes.
 export const runtime = "nodejs";
-
-type FactForReport = {
-  section: FactSection;
-  text: string;
-  fact_date: string | null;
-  sources: { publisher: string }[];
-};
 
 // Same-origin route: the record page's <iframe> renders this inline, and the
 // Download button is a plain `<a href=... download>` — both hit this GET.
@@ -30,22 +22,25 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .neq("status", "rejected"),
   ]);
 
-  if (!company) {
+  // "Not enriched" = no report — the same product invariant that disables
+  // the record page's Download button (see page.tsx's `hasBeenEnriched`).
+  // Direct navigation to this route shouldn't fabricate a placeholder PDF.
+  if (!company?.tldr) {
     return new Response("Not found", { status: 404 });
   }
 
-  const doc = new PdfDoc();
+  const doc = await PdfDoc.create();
   renderCompanyReport(doc, {
     companyName: company.name,
     descriptor: [company.ownership, company.hq].filter(Boolean).join(" · "),
     tldr: company.tldr,
-    sectionsData: mapFactsToReportSections((facts ?? []) as FactForReport[]),
+    sectionsData: mapFactsToReportSections(facts ?? []),
   });
 
   const filename = company.name.replace(/[^\w.-]+/g, "_") || "report";
-  // Response's BodyInit typing wants a plain Uint8Array<ArrayBuffer>, not
-  // Node's Buffer<ArrayBufferLike> — copy across the boundary.
-  return new Response(new Uint8Array(doc.toBytes()), {
+  // Response's BodyInit typing wants a plain Uint8Array<ArrayBuffer>; wrap
+  // pdf-lib's Uint8Array<ArrayBufferLike> to copy it across that boundary.
+  return new Response(new Uint8Array(await doc.toBytes()), {
     headers: {
       "Content-Type": "application/pdf",
       // "inline" (not "attachment") so the record page's iframe can render it

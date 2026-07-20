@@ -38,16 +38,8 @@ type FactRow = {
   sources: SourceRow[];
 };
 
-// PDF pivot (BUILD.md §E): the record page gets a view switcher. PDF report
-// is the default; Source is today's fact list, unchanged below. History
-// (all facts ever found, ignoring freshness windows/removed state) isn't
-// built yet — it's a stub tab only, out of scope for this task.
+// View switcher (PDF report / Source / History) — see BUILD.md §E.
 type View = "pdf" | "source" | "history";
-
-function parseView(raw: string | undefined): View {
-  if (raw === "source" || raw === "history") return raw;
-  return "pdf";
-}
 
 export default async function CompanyPage({
   params,
@@ -58,16 +50,18 @@ export default async function CompanyPage({
 }) {
   const { id } = await params;
   const { view: viewParam } = await searchParams;
-  const view = parseView(viewParam);
+  const view: View = viewParam === "source" || viewParam === "history" ? viewParam : "pdf";
   const supabase = await createClient();
 
   const [{ data: company }, { data: facts }, { data: jobs }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
+    // Unfiltered by status — History (below) needs every fact ever found,
+    // including removed ones. Source's bySection map filters rejected back
+    // out in memory rather than re-querying.
     supabase
       .from("facts")
       .select("id, section, text, fact_date, status, sources(publisher, title, url, year)")
       .eq("company_id", id)
-      .neq("status", "rejected")
       .order("created_at"),
     // Latest job (any status): drives the pill — spinner while active, red
     // Failed with the error on hover, matching the companies list.
@@ -88,11 +82,18 @@ export default async function CompanyPage({
       ? ("failed" as const)
       : effectiveStatus(company.status, latestJob?.status === "queued" || latestJob?.status === "running");
 
+  // Both views share one query; bySection filters rejected facts out in memory.
   const bySection = new Map<FactSection, FactRow[]>();
+  const historyBySection = new Map<FactSection, FactRow[]>();
   for (const fact of (facts ?? []) as unknown as FactRow[]) {
-    const list = bySection.get(fact.section) ?? [];
+    const list = historyBySection.get(fact.section) ?? [];
     list.push(fact);
-    bySection.set(fact.section, list);
+    historyBySection.set(fact.section, list);
+    if (fact.status !== "rejected") {
+      const included = bySection.get(fact.section) ?? [];
+      included.push(fact);
+      bySection.set(fact.section, included);
+    }
   }
 
   // The runner only sets tldr on a company's first successful enrichment
@@ -111,9 +112,7 @@ export default async function CompanyPage({
         </span>
         <span className="spacer"></span>
         <form>
-          {/* Not yet enriched: Enrich is the primary (black) action. Once
-              enriched it's still fully clickable (re-runs to pull fresher
-              info) but drops to secondary gray so Download reads as primary. */}
+          {/* Still clickable once enriched (re-runs to pull fresher data) — just secondary so Download reads as primary. */}
           <button
             type="submit"
             className={hasBeenEnriched ? "btn" : "btn primary"}
@@ -127,9 +126,6 @@ export default async function CompanyPage({
             Download PDF
           </a>
         ) : (
-          // Genuinely disabled (native `disabled` — not just styled to look
-          // it): there's no report to download until the company has been
-          // enriched at least once.
           <button type="button" className="btn" disabled aria-disabled="true" title="Enrich this company first">
             Download PDF
           </button>
@@ -166,23 +162,25 @@ export default async function CompanyPage({
           </div>
           <div className="content">
             {view === "pdf" && <PdfReportPane companyId={company.id} hasBeenEnriched={hasBeenEnriched} />}
-            {view === "history" && (
-              <div className="empty">
-                History isn&rsquo;t built yet — it will show every fact ever found for this
-                company, ignoring freshness windows and removed state.
-              </div>
-            )}
-            {view === "source" && (
+            {(view === "history" || view === "source") && (
               <>
-                <div className="card">
-                  <h3>TL;DR</h3>
-                  <div className="tldr">{company.tldr}</div>
-                </div>
+                {view === "history" && (
+                  <div className="note">
+                    Every fact ever found for this company — nothing is deleted. Items removed
+                    from the report are still shown here, marked below.
+                  </div>
+                )}
+                {view === "source" && (
+                  <div className="card">
+                    <h3>TL;DR</h3>
+                    <div className="tldr">{company.tldr}</div>
+                  </div>
+                )}
                 {SECTIONS.map((section) => (
                   <SectionCard
                     key={section.slug}
                     title={section.title}
-                    items={bySection.get(section.slug) ?? []}
+                    items={(view === "history" ? historyBySection : bySection).get(section.slug) ?? []}
                     whatIfEmpty={section.whatIfEmpty}
                   />
                 ))}
@@ -207,10 +205,9 @@ function ViewTabs({ companyId, view }: { companyId: string; view: View }) {
       <button className={`tag ${view === "source" ? "on" : ""}`} data-href={`/companies/${companyId}?view=source`}>
         Source
       </button>
-      {/* Stub — no data-href, so it's inert rather than a dead link. */}
-      <span className="tag" style={{ opacity: 0.5, cursor: "not-allowed" }} title="Coming soon">
+      <button className={`tag ${view === "history" ? "on" : ""}`} data-href={`/companies/${companyId}?view=history`}>
         History
-      </span>
+      </button>
     </div>
   );
 }
@@ -247,8 +244,11 @@ function SectionCard({
 
 function ItemRow({ item }: { item: FactRow }) {
   const suggested = item.status === "suggested";
+  // Only ever true in History — Source's bySection map filters rejected
+  // facts back out in memory, so this branch never renders there.
+  const removed = item.status === "rejected";
   return (
-    <div className={suggested ? "item suggested" : "item"}>
+    <div className={`item${suggested ? " suggested" : ""}${removed ? " removed" : ""}`}>
       <div className="row">
         <div className="txt">{item.text}</div>
         {item.fact_date && <div className="date">{fmtDate(item.fact_date)}</div>}
@@ -260,10 +260,15 @@ function ItemRow({ item }: { item: FactRow }) {
           ))}
         </div>
       )}
+      {removed && (
+        <div className="fact-actions">
+          <span className="removed-badge">Removed from report</span>
+        </div>
+      )}
       {suggested && <FactActions factId={item.id} />}
       {item.status === "approved" && (
-        // Walks an approval back. Rejected facts are excluded from this
-        // page's query, so this is effectively "remove."
+        // Walks an approval back. Rejected facts are excluded from Source's
+        // query, so this is effectively "remove" (still visible in History).
         <div className="fact-actions">
           <FactStatusButton factId={item.id} to="rejected" from="approved" label="Remove" />
         </div>
