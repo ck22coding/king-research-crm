@@ -4,6 +4,7 @@ import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr
 import { setFactStatus, enrichCompany } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
+import { DB_SECTION_TO_REPORT_SECTION, REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
@@ -11,21 +12,32 @@ import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 // — the `.src` buttons below just need the right `data-url`, no per-chip
 // client code.
 
-// Canon slugs (supabase/migrations/20260715120000_initial_schema.sql) mapped
-// to the approved display titles, in the fixed 8-section order. `whatIfEmpty`
-// mirrors the prototype's per-section emptyState() copy.
-// Display order (2026-07-16 redesign): timely signal first (news, growth,
-// money extend the TL;DR's trajectory/M&A sentences), then context
-// (leadership), then the read-on gate (risk flags), then diligence detail.
-const SECTIONS: { slug: FactSection; title: string; whatIfEmpty: string }[] = [
-  { slug: "news", title: "News & announcements", whatIfEmpty: "recent company news" },
-  { slug: "growth_signals", title: "Growth signals", whatIfEmpty: "hiring, contracts & customer wins" },
-  { slug: "money", title: "Money", whatIfEmpty: "financial performance, funding & M&A" },
-  { slug: "leadership", title: "Leadership & people", whatIfEmpty: "senior management changes" },
-  { slug: "risk_flags", title: "Risk flags", whatIfEmpty: "risk flags" },
-  { slug: "regulatory", title: "Regulatory", whatIfEmpty: "FDA / CMS / reimbursement news" },
-  { slug: "segmentation", title: "Segmentation", whatIfEmpty: "how the business breaks down" },
-  { slug: "market_sizing", title: "Market sizing", whatIfEmpty: "best-effort SAM estimates" },
+// Source/History use the PDF pivot's 7-section set (BUILD.md §PDF pivot),
+// sharing REPORT_SECTIONS + DB_SECTION_TO_REPORT_SECTION from lib/pdf/report
+// so the views can never drift from the PDF. company_summary is the TL;DR
+// card, not a fact section, so it's skipped here. `whatIfEmpty` mirrors the
+// prototype's per-section emptyState() copy.
+const WHAT_IF_EMPTY: Record<ReportSectionSlug, string> = {
+  company_summary: "", // rendered as the TL;DR card, never a section card
+  leadership: "senior management changes",
+  acquisitions_partnerships: "acquisitions & partnerships",
+  news: "recent company news",
+  financials: "financial performance, funding & M&A",
+  growth_signals: "hiring, contracts & customer wins",
+  risk_flags: "risk flags",
+};
+const SECTIONS = REPORT_SECTIONS.filter((s) => s.slug !== "company_summary").map((s) => ({
+  slug: s.slug,
+  title: s.title,
+  whatIfEmpty: WHAT_IF_EMPTY[s.slug],
+}));
+
+// Dropped from the report (and Source view) by the PDF pivot, but History
+// promises "every fact ever found", so any existing facts under these legacy
+// slugs still get a card there.
+const LEGACY_SECTIONS: { slug: FactSection; title: string }[] = [
+  { slug: "segmentation", title: "Segmentation (legacy)" },
+  { slug: "market_sizing", title: "Market sizing (legacy)" },
 ];
 
 type SourceRow = { publisher: string; title: string | null; url: string; year: number | null };
@@ -83,16 +95,27 @@ export default async function CompanyPage({
       : effectiveStatus(company.status, latestJob?.status === "queued" || latestJob?.status === "running");
 
   // Both views share one query; bySection filters rejected facts out in memory.
-  const bySection = new Map<FactSection, FactRow[]>();
-  const historyBySection = new Map<FactSection, FactRow[]>();
+  // Facts re-key from DB slugs to the report's sections with the same mapping
+  // the PDF uses (regulatory→news, money→financials); legacy slugs with no
+  // report home (segmentation, market_sizing) surface in History only.
+  const bySection = new Map<ReportSectionSlug, FactRow[]>();
+  const historyBySection = new Map<ReportSectionSlug, FactRow[]>();
+  const legacyBySection = new Map<FactSection, FactRow[]>();
   for (const fact of (facts ?? []) as unknown as FactRow[]) {
-    const list = historyBySection.get(fact.section) ?? [];
+    const target = DB_SECTION_TO_REPORT_SECTION[fact.section];
+    if (!target) {
+      const list = legacyBySection.get(fact.section) ?? [];
+      list.push(fact);
+      legacyBySection.set(fact.section, list);
+      continue;
+    }
+    const list = historyBySection.get(target) ?? [];
     list.push(fact);
-    historyBySection.set(fact.section, list);
+    historyBySection.set(target, list);
     if (fact.status !== "rejected") {
-      const included = bySection.get(fact.section) ?? [];
+      const included = bySection.get(target) ?? [];
       included.push(fact);
-      bySection.set(fact.section, included);
+      bySection.set(target, included);
     }
   }
 
@@ -149,8 +172,8 @@ export default async function CompanyPage({
               <span>{company.hq}</span>
             </div>
           </div>
+          <ViewTabs companyId={company.id} view={view} />
         </div>
-        <ViewTabs companyId={company.id} view={view} />
         <div className="rec-body">
           <div className="rail">
             <h4>Record details</h4>
@@ -184,6 +207,13 @@ export default async function CompanyPage({
                     whatIfEmpty={section.whatIfEmpty}
                   />
                 ))}
+                {view === "history" &&
+                  LEGACY_SECTIONS.map(({ slug, title }) => {
+                    const items = legacyBySection.get(slug) ?? [];
+                    return items.length ? (
+                      <SectionCard key={slug} title={title} items={items} whatIfEmpty="" />
+                    ) : null;
+                  })}
               </>
             )}
           </div>
