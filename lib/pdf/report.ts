@@ -120,20 +120,28 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
     // sections the narrative doesn't cover (older narrative, refiled facts,
     // synthesis failure) fall back to the facts themselves as paragraphs.
     const items = data.sectionsData[section.slug] ?? [];
-    const paragraphs =
-      data.narrative?.[section.slug]?.filter((p) => typeof p === "string" && p.trim().length) ?? [];
-    if (paragraphs.length) {
-      for (const para of paragraphs) {
-        // oversized skips just this paragraph; exhausted stops the section.
-        const verdict = doc.fitVerdict(para, { size: 9 });
-        if (verdict === "oversized") continue;
-        if (verdict === "exhausted") break;
-        doc.text(para, { size: 9 });
-        doc.spacer(6);
-      }
-    } else if (!items.length) {
+    // Stale-narrative guard (codex review): narrative only renders while
+    // current in-window facts exist for the section — items comes through
+    // the same window/status filter the synthesis input used, so zero items
+    // means removed/aged-out facts and old prose must NOT outlive its data.
+    const paragraphs = items.length
+      ? (data.narrative?.[section.slug]?.filter((p) => typeof p === "string" && p.trim().length) ?? [])
+      : [];
+    let wroteNarrative = 0;
+    for (const para of paragraphs) {
+      // oversized skips just this paragraph; exhausted stops the section.
+      const verdict = doc.fitVerdict(para, { size: 9 });
+      if (verdict === "oversized") continue;
+      if (verdict === "exhausted") break;
+      doc.text(para, { size: 9 });
+      doc.spacer(6);
+      wroteNarrative += 1;
+    }
+    if (!items.length) {
       doc.text(`Nothing found for ${section.title.toLowerCase()}.`, { size: 9 });
-    } else {
+    } else if (wroteNarrative === 0) {
+      // No narrative for this section, or every paragraph was individually
+      // oversized (codex review) — the facts themselves are the fallback.
       for (const item of items) {
         const date = item.fact_date ? ` (${fmtDate(item.fact_date)})` : "";
         const line = `${item.text}${date}`;
