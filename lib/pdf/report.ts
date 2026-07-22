@@ -103,6 +103,12 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
   doc.spacer(10);
 
   for (const section of REPORT_SECTIONS) {
+    // Empty topic = no section at all (per Eric, 2026-07-22): a heading with
+    // "Nothing found" wastes the reader's attention — leave the whole
+    // section out. company_summary is exempt (always renders, from tldr).
+    const items = data.sectionsData[section.slug] ?? [];
+    if (section.slug !== "company_summary" && !items.length) continue;
+
     // Skip headings that would have nothing (that fits) beneath them.
     const headingOpts = { font: "Helvetica-Bold" as const, size: 12 };
     if (!doc.fitsWithContent(section.title, headingOpts)) continue;
@@ -119,7 +125,6 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
     // the synthesized narrative (each paragraph answers a fixed question);
     // sections the narrative doesn't cover (older narrative, refiled facts,
     // synthesis failure) fall back to the facts themselves as paragraphs.
-    const items = data.sectionsData[section.slug] ?? [];
     // Stale-narrative guard (codex review): narrative only renders while
     // current in-window facts exist for the section — items comes through
     // the same window/status filter the synthesis input used, so zero items
@@ -137,9 +142,7 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
       doc.spacer(6);
       wroteNarrative += 1;
     }
-    if (!items.length) {
-      doc.text(`Nothing found for ${section.title.toLowerCase()}.`, { size: 9 });
-    } else if (wroteNarrative === 0) {
+    if (wroteNarrative === 0) {
       // No narrative for this section, or every paragraph was individually
       // oversized (codex review) — the facts themselves are the fallback.
       for (const item of items) {
