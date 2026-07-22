@@ -60,6 +60,18 @@ test.describe("realtime status pills", () => {
     }
 
     // --- enrichment_jobs insert, seen live on the still-open record page ---
+    // Self-reset: the pill derives from Availity's LATEST job, and loud
+    // failures persist — a leftover 'failed' job from any real runner crash
+    // would show "Failed" here forever. Settle stale unfinished/failed jobs
+    // to 'done' first (no delete policy exists), same trick enrich-e2e uses,
+    // so the pill falls back to the company's seeded 'queued' status.
+    const { error: settleError } = await runner
+      .from("enrichment_jobs")
+      .update({ status: "done" })
+      .eq("company_id", AVAILITY_ID)
+      .in("status", ["failed", "queued", "running"]);
+    if (settleError) throw settleError;
+
     await page.goto(`/companies/${AVAILITY_ID}`);
     const pill = page.locator(".toolbar .status");
     await expect(pill).toHaveText(/Queued/);
