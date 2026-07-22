@@ -12,6 +12,10 @@
 4. **The LaunchAgent is deleted entirely.** No plist, no launchd docs, no scheduled
    ticks. The runner's continuous mode (poll every ~5s while it's open) is the only
    documented way to run it, and it works on any OS.
+5. **Open-sourcing is in scope now**: repos published to GitHub (after a secrets
+   scrub) and the runner published to npm as a one-command install.
+6. **Accounts are enrich-capable by default** — new and existing; revoke later by
+   flag flip.
 
 ## Why
 
@@ -27,7 +31,9 @@ Onboarding page (rewritten) walks a new user through:
 
 1. Install Claude Code CLI, run `claude login` (their subscription pays for their runs).
 2. Install the King Research plugin.
-3. Get the runner folder, `npm install`, start it: `node index.mjs`.
+3. Start the runner with one command: `npx king-research-runner` (npm-published;
+   exact name pending npm availability — scoped fallback if taken). No cloning,
+   no manual `npm install`.
 4. First start, the runner asks for a **pairing code**. The onboarding page has a
    **"Connect this computer"** button that shows a one-time code (expires in 10
    minutes). Paste it once; the runner stores its own login locally and never asks again.
@@ -62,6 +68,9 @@ facts stream in live (existing realtime). Carter re-pairs his own Mac the same w
   lease claim, heartbeat_at, owner-guarded writes, retry, loud failure — unchanged.
 - The shared runner account is retired: `RUNNER_EMAIL`/`RUNNER_PASSWORD` removed from
   the `.env` contract, onboarding, and runner code; the Supabase account gets disabled.
+- **Everyone can enrich by default**: new accounts start enrich-capable, and all
+  existing accounts (including Dad's) are backfilled to enrich-capable. Revoking a
+  person = flipping their flag off (Supabase dashboard for v1).
 
 ### Runner-offline banner (new — loud-failures rule)
 
@@ -83,13 +92,27 @@ New silent-failure risk: Enrich clicked, no runner running → job sits "Queued"
 - `runner/README.md` launchd/on-demand sections — rewritten around continuous mode.
 - Onboarding page, BUILD.md runner sections, and memory notes — scrubbed of launchd.
 
+## Open-sourcing (in scope — Carter, 2026-07-22)
+
+- **Publish the repos to GitHub** under Carter's account: the plugin repo keeps its
+  already-planned home (`ck22coding/king-research`, marketplace at root, pushed
+  verbatim); `web` and `runner` publish as their own public repos. The `supabase/`
+  migrations folder (currently loose at the project root) folds into the public web
+  repo so self-hosters get the schema.
+- **Pre-publish secrets scrub, non-negotiable**: audit the FULL git history of every
+  repo for keys, passwords, and personal data before anything goes public. The
+  Supabase anon key and URL are public by design (safe); the service-role key and any
+  password must never have been committed — verify, don't assume. Add an MIT LICENSE
+  and a short README to each repo.
+- **npm-packaged runner**: publish the runner to npm with a `bin` entry so
+  `npx king-research-runner` is the entire install. The shared site's Supabase URL +
+  anon key ship as baked-in defaults; env vars override them for self-hosters.
+  Needs Carter's npm account login at publish time (I'll ask when we get there).
+
 ## Not in this build (flagged)
 
-- **Publishing the repos to GitHub** — required for "open source" to be real; the
-  `web` repo currently has no remote at all. Separate step, Carter's call.
-- npm-packaged one-command runner install (`npx …`) — nice-to-have later.
-- Flipping Dad's account to enrich-capable — one flag flip whenever wanted.
 - Server-side "revoke this computer" UI — v1 revocation = Supabase dashboard.
+- Multi-tenant / private workspaces — explicitly rejected in design.
 
 ## Testing
 
@@ -102,7 +125,11 @@ New silent-failure risk: Enrich clicked, no runner running → job sits "Queued"
 
 ## Rollout
 
-1. One Supabase migration: two new tables + RLS changes on `enrichment_jobs`.
+1. One Supabase migration: two new tables + RLS changes on `enrichment_jobs` +
+   enrich-capable default/backfill.
 2. Vercel env: add `SUPABASE_SERVICE_ROLE_KEY` (production + preview).
 3. Deploy web, update runner, delete launchd artifacts, rewrite docs.
-4. Carter re-pairs his Mac; disable the old runner account.
+4. Secrets-scrub audit → publish repos to GitHub (LICENSE + READMEs) → publish the
+   runner to npm.
+5. Carter re-pairs his Mac via `npx king-research-runner`; disable the old runner
+   account.
