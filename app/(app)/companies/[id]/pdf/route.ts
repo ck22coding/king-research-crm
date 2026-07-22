@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("facts")
-      .select("section, text, fact_date, sources(publisher)")
+      .select("section, text, fact_date, importance, sources(publisher)")
       .eq("company_id", id)
       // "removed" (not the pre-pivot "rejected") — with the two-state status,
       // filtering a value that no longer exists would silently match every

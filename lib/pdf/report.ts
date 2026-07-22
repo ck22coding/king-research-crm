@@ -18,14 +18,21 @@ export type ReportSectionSlug =
   | "growth_signals"
   | "risk_flags";
 
-export const REPORT_SECTIONS: { slug: ReportSectionSlug; title: string; maxItems: number }[] = [
-  { slug: "company_summary", title: "Company Summary", maxItems: 1 },
-  { slug: "leadership", title: "Leadership & People", maxItems: 4 },
-  { slug: "acquisitions_partnerships", title: "Acquisitions & Partnerships", maxItems: 4 },
-  { slug: "news", title: "News & Announcements", maxItems: 5 },
-  { slug: "financials", title: "Financials", maxItems: 4 },
-  { slug: "growth_signals", title: "Growth Signals", maxItems: 3 },
-  { slug: "risk_flags", title: "Risk Flags", maxItems: 3 },
+// windowMonths is a HARD recency gate (per Eric, 2026-07-22): a fact renders
+// in the PDF only if its fact_date falls inside its section's window. Facts
+// with no date can't prove freshness and are excluded here (still visible in
+// Source/History). financials is 12 because "most recent quarter / most
+// recent round" stays the current picture until superseded — the skill
+// already enforces the tighter semantic at research time. Keep this table in
+// sync with SECTION_WINDOWS_MONTHS in runner/index.mjs (the ranking pass).
+export const REPORT_SECTIONS: { slug: ReportSectionSlug; title: string; maxItems: number; windowMonths: number | null }[] = [
+  { slug: "company_summary", title: "Company Summary", maxItems: 1, windowMonths: null },
+  { slug: "leadership", title: "Leadership & People", maxItems: 4, windowMonths: 6 },
+  { slug: "acquisitions_partnerships", title: "Acquisitions & Partnerships", maxItems: 4, windowMonths: 12 },
+  { slug: "news", title: "News & Announcements", maxItems: 5, windowMonths: 6 },
+  { slug: "financials", title: "Financials", maxItems: 4, windowMonths: 12 },
+  { slug: "growth_signals", title: "Growth Signals", maxItems: 3, windowMonths: 3 },
+  { slug: "risk_flags", title: "Risk Flags", maxItems: 3, windowMonths: 6 },
 ];
 
 // The 6 fact-bearing report slugs (company_summary is companies.tldr).
@@ -43,22 +50,37 @@ export type FactForReport = {
   section: FactSection;
   text: string;
   fact_date: string | null;
+  importance: number | null;
   sources: { publisher: string }[];
 };
 
-// Newest-first, nulls last, capped to each section's maxItems.
+// Per section: hard window gate on fact_date, then the Sonnet ranking order
+// (importance DESC — the runner's ranking pass writes it after each enrich;
+// unranked/legacy facts sink), date DESC as the tiebreak, capped to maxItems.
 export function mapFactsToReportSections(facts: FactForReport[]): Record<ReportSectionSlug, ReportFact[]> {
-  const bySlug: Partial<Record<ReportSectionSlug, ReportFact[]>> = {};
+  const bySlug: Partial<Record<ReportSectionSlug, FactForReport[]>> = {};
   for (const fact of facts) {
     if (!FACT_SECTION_SLUGS.has(fact.section)) continue; // legacy slug — no PDF home, don't crash
-    const target = fact.section as ReportSectionSlug;
-    (bySlug[target] ??= []).push({ text: fact.text, fact_date: fact.fact_date, sources: fact.sources });
+    (bySlug[fact.section as ReportSectionSlug] ??= []).push(fact);
   }
+  const now = new Date();
   const result = {} as Record<ReportSectionSlug, ReportFact[]>;
   for (const section of REPORT_SECTIONS) {
-    result[section.slug] = (bySlug[section.slug] ?? [])
-      .sort((a, b) => (b.fact_date ?? "").localeCompare(a.fact_date ?? ""))
-      .slice(0, section.maxItems);
+    let pool = bySlug[section.slug] ?? [];
+    if (section.windowMonths !== null) {
+      const cutoff = new Date(now);
+      cutoff.setMonth(cutoff.getMonth() - section.windowMonths);
+      const cutoffIso = cutoff.toISOString().slice(0, 10);
+      pool = pool.filter((f) => f.fact_date !== null && f.fact_date >= cutoffIso);
+    }
+    result[section.slug] = pool
+      .sort(
+        (a, b) =>
+          (b.importance ?? -1) - (a.importance ?? -1) ||
+          (b.fact_date ?? "").localeCompare(a.fact_date ?? ""),
+      )
+      .slice(0, section.maxItems)
+      .map((f) => ({ text: f.text, fact_date: f.fact_date, sources: f.sources }));
   }
   return result;
 }
