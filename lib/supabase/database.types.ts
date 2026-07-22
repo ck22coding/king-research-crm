@@ -55,6 +55,7 @@ export type Database = {
           hq: string | null;
           status: CompanyStatus;
           tldr: string | null;
+          report_narrative: Record<string, unknown> | null;
           updated_at: string;
           created_by: string | null;
         };
@@ -67,6 +68,7 @@ export type Database = {
           hq?: string | null;
           status?: CompanyStatus;
           tldr?: string | null;
+          report_narrative?: Record<string, unknown> | null;
           updated_at?: string;
           created_by?: string | null;
         };
@@ -79,6 +81,7 @@ export type Database = {
           hq?: string | null;
           status?: CompanyStatus;
           tldr?: string | null;
+          report_narrative?: Record<string, unknown> | null;
           updated_at?: string;
           created_by?: string | null;
         };

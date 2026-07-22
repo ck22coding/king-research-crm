@@ -90,6 +90,10 @@ export type ReportData = {
   descriptor: string;
   tldr: string | null;
   sectionsData: Record<ReportSectionSlug, ReportFact[]>;
+  // Synthesized narrative paragraphs per section (runner's synthesis pass;
+  // companies.report_narrative.sections). Null/missing section = fall back
+  // to rendering that section's fact texts as plain paragraphs.
+  narrative?: Partial<Record<ReportSectionSlug, string[]>> | null;
 };
 
 export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
@@ -110,22 +114,39 @@ export function renderCompanyReport(doc: PdfDoc, data: ReportData) {
       continue;
     }
 
+    // Per Eric (2026-07-22): sections are plain prose paragraphs with a
+    // blank line between them — never bullets/dashes. Preferred content is
+    // the synthesized narrative (each paragraph answers a fixed question);
+    // sections the narrative doesn't cover (older narrative, refiled facts,
+    // synthesis failure) fall back to the facts themselves as paragraphs.
     const items = data.sectionsData[section.slug] ?? [];
-    if (!items.length) {
+    const paragraphs =
+      data.narrative?.[section.slug]?.filter((p) => typeof p === "string" && p.trim().length) ?? [];
+    if (paragraphs.length) {
+      for (const para of paragraphs) {
+        // oversized skips just this paragraph; exhausted stops the section.
+        const verdict = doc.fitVerdict(para, { size: 9 });
+        if (verdict === "oversized") continue;
+        if (verdict === "exhausted") break;
+        doc.text(para, { size: 9 });
+        doc.spacer(6);
+      }
+    } else if (!items.length) {
       doc.text(`Nothing found for ${section.title.toLowerCase()}.`, { size: 9 });
     } else {
       for (const item of items) {
         const date = item.fact_date ? ` (${fmtDate(item.fact_date)})` : "";
-        const line = `- ${item.text}${date}`;
+        const line = `${item.text}${date}`;
         // oversized skips just this item (older ones may still fit);
         // exhausted stops the section (BUILD.md §B: drop lowest-ranked first).
         const verdict = doc.fitVerdict(line, { size: 9 });
         if (verdict === "oversized") continue;
         if (verdict === "exhausted") break;
         doc.text(line, { size: 9 });
+        doc.spacer(6);
       }
     }
-    doc.spacer(8);
+    doc.spacer(4);
   }
 
   const publishers = [

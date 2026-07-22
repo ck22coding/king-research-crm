@@ -33,11 +33,16 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   const doc = await PdfDoc.create();
+  // report_narrative: { sections: {slug: [para...]}, generated_at } — written
+  // by the runner's synthesis pass; absent for never-synthesized companies.
+  const narrative =
+    (company.report_narrative as { sections?: Record<string, string[]> } | null)?.sections ?? null;
   renderCompanyReport(doc, {
     companyName: company.name,
     descriptor: [company.ownership, company.hq].filter(Boolean).join(" · "),
     tldr: company.tldr,
     sectionsData: mapFactsToReportSections(facts ?? []),
+    narrative,
   });
 
   const filename = company.name.replace(/[^\w.-]+/g, "_") || "report";
