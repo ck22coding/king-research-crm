@@ -4,7 +4,7 @@ import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr
 import { setFactStatus, enrichCompany } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
-import { DB_SECTION_TO_REPORT_SECTION, REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
+import { REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
@@ -94,25 +94,25 @@ export default async function CompanyPage({
       ? ("failed" as const)
       : effectiveStatus(company.status, latestJob?.status === "queued" || latestJob?.status === "running");
 
-  // Both views share one query; bySection filters rejected facts out in memory.
-  // Facts re-key from DB slugs to the report's sections with the same mapping
-  // the PDF uses (regulatory→news, money→financials); legacy slugs with no
-  // report home (segmentation, market_sizing) surface in History only.
+  // Both views share one query; bySection filters removed facts out in memory.
+  // facts.section carries report slugs directly (post-migration); legacy slugs
+  // with no report home (segmentation, market_sizing) surface in History only.
+  const factSectionSlugs = new Set<string>(SECTIONS.map((s) => s.slug));
   const bySection = new Map<ReportSectionSlug, FactRow[]>();
   const historyBySection = new Map<ReportSectionSlug, FactRow[]>();
   const legacyBySection = new Map<FactSection, FactRow[]>();
   for (const fact of (facts ?? []) as unknown as FactRow[]) {
-    const target = DB_SECTION_TO_REPORT_SECTION[fact.section];
-    if (!target) {
+    if (!factSectionSlugs.has(fact.section)) {
       const list = legacyBySection.get(fact.section) ?? [];
       list.push(fact);
       legacyBySection.set(fact.section, list);
       continue;
     }
+    const target = fact.section as ReportSectionSlug;
     const list = historyBySection.get(target) ?? [];
     list.push(fact);
     historyBySection.set(target, list);
-    if (fact.status !== "rejected") {
+    if (fact.status !== "removed") {
       const included = bySection.get(target) ?? [];
       included.push(fact);
       bySection.set(target, included);
@@ -273,12 +273,11 @@ function SectionCard({
 }
 
 function ItemRow({ item }: { item: FactRow }) {
-  const suggested = item.status === "suggested";
-  // Only ever true in History — Source's bySection map filters rejected
+  // Only ever true in History — Source's bySection map filters removed
   // facts back out in memory, so this branch never renders there.
-  const removed = item.status === "rejected";
+  const removed = item.status === "removed";
   return (
-    <div className={`item${suggested ? " suggested" : ""}${removed ? " removed" : ""}`}>
+    <div className={`item${removed ? " removed" : ""}`}>
       <div className="row">
         <div className="txt">{item.text}</div>
         {item.fact_date && <div className="date">{fmtDate(item.fact_date)}</div>}
@@ -290,17 +289,16 @@ function ItemRow({ item }: { item: FactRow }) {
           ))}
         </div>
       )}
-      {removed && (
+      {removed ? (
         <div className="fact-actions">
           <span className="removed-badge">Removed from report</span>
+          <FactStatusButton factId={item.id} to="included" from="removed" label="Restore" />
         </div>
-      )}
-      {suggested && <FactActions factId={item.id} />}
-      {item.status === "approved" && (
-        // Walks an approval back. Rejected facts are excluded from Source's
-        // query, so this is effectively "remove" (still visible in History).
+      ) : (
+        // Auto-include by rule (§E): the only curation action is remove.
+        // Excluded from the PDF + Source, still visible (marked) in History.
         <div className="fact-actions">
-          <FactStatusButton factId={item.id} to="rejected" from="approved" label="Remove" />
+          <FactStatusButton factId={item.id} to="removed" from="included" label="Remove from report" />
         </div>
       )}
     </div>
@@ -316,31 +314,19 @@ function FactStatusButton({
   label,
 }: {
   factId: string;
-  to: "approved" | "rejected";
-  from: "suggested" | "approved";
+  to: "included" | "removed";
+  from: "included" | "removed";
   label: string;
 }) {
   return (
     <form>
       <button
         type="submit"
-        className={`btn ${to === "approved" ? "approve" : "reject"}`}
+        className={`btn ${to === "included" ? "approve" : "reject"}`}
         formAction={setFactStatus.bind(null, factId, to, from)}
       >
         {label}
       </button>
     </form>
-  );
-}
-
-// Suggested facts only — approve/reject calls the setFactStatus server
-// action directly (bind works in Server Components, no client JS needed).
-function FactActions({ factId }: { factId: string }) {
-  return (
-    <div className="fact-actions">
-      <span className="suggested-badge">Suggested</span>
-      <FactStatusButton factId={factId} to="approved" from="suggested" label="Approve" />
-      <FactStatusButton factId={factId} to="rejected" from="suggested" label="Reject" />
-    </div>
   );
 }

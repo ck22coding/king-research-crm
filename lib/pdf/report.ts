@@ -1,8 +1,9 @@
 // Report section config — order/titles/caps in one array so layout changes
 // don't touch the renderer. See BUILD.md "PDF pivot" §A for the spec.
 //
-// `facts.section` in the DB is still the old 8-slug schema; the mapping
-// below bridges it to the 7 report sections until that migration lands.
+// facts.section carries these slugs directly since the
+// 20260720120000_pdf_pivot_and_job_leases migration; legacy slugs
+// (segmentation/market_sizing) have no report home and are skipped.
 
 import { fmtDate } from "@/lib/format";
 import type { FactSection } from "@/lib/supabase/database.types";
@@ -27,16 +28,10 @@ export const REPORT_SECTIONS: { slug: ReportSectionSlug; title: string; maxItems
   { slug: "risk_flags", title: "Risk Flags", maxItems: 3 },
 ];
 
-// `regulatory` folds into News; `segmentation`/`market_sizing` have no
-// entry — dropped from the PDF (still shown in the Source view).
-export const DB_SECTION_TO_REPORT_SECTION: Partial<Record<FactSection, ReportSectionSlug>> = {
-  leadership: "leadership",
-  news: "news",
-  regulatory: "news",
-  money: "financials",
-  growth_signals: "growth_signals",
-  risk_flags: "risk_flags",
-};
+// The 6 fact-bearing report slugs (company_summary is companies.tldr).
+const FACT_SECTION_SLUGS = new Set<string>(
+  REPORT_SECTIONS.map((s) => s.slug).filter((s) => s !== "company_summary"),
+);
 
 export type ReportFact = {
   text: string;
@@ -55,8 +50,8 @@ export type FactForReport = {
 export function mapFactsToReportSections(facts: FactForReport[]): Record<ReportSectionSlug, ReportFact[]> {
   const bySlug: Partial<Record<ReportSectionSlug, ReportFact[]>> = {};
   for (const fact of facts) {
-    const target = DB_SECTION_TO_REPORT_SECTION[fact.section];
-    if (!target) continue; // no PDF home for this slug — map what exists, don't crash
+    if (!FACT_SECTION_SLUGS.has(fact.section)) continue; // legacy slug — no PDF home, don't crash
+    const target = fact.section as ReportSectionSlug;
     (bySlug[target] ??= []).push({ text: fact.text, fact_date: fact.fact_date, sources: fact.sources });
   }
   const result = {} as Record<ReportSectionSlug, ReportFact[]>;

@@ -1,19 +1,23 @@
-// Hand-written to match supabase/migrations/20260715120000_initial_schema.sql exactly.
+// Hand-written to match supabase/migrations/ (initial schema + the
+// 20260720120000_pdf_pivot_and_job_leases migration) exactly.
 // No headcount_trend column on companies — the prototype's sample data invented one.
 
 export type CompanyStatus = "queued" | "in_progress" | "ready";
 
+// 6 report sections (PDF pivot §A) + 2 legacy slugs kept read-only for
+// History; the skill never emits legacy slugs again.
 export type FactSection =
   | "leadership"
+  | "acquisitions_partnerships"
   | "news"
-  | "money"
+  | "financials"
   | "growth_signals"
-  | "regulatory"
   | "risk_flags"
   | "segmentation"
   | "market_sizing";
 
-export type FactStatus = "suggested" | "approved" | "rejected";
+// Auto-include by rule (§E): the only human action is remove (and restore).
+export type FactStatus = "included" | "removed";
 
 export type EnrichmentJobStatus = "queued" | "running" | "done" | "failed";
 
@@ -97,6 +101,8 @@ export type Database = {
           fact_date: string | null;
           status: FactStatus;
           group_key: string | null;
+          stats: Record<string, unknown> | null;
+          importance: number | null;
           created_at: string;
         };
         Insert: {
@@ -107,6 +113,8 @@ export type Database = {
           fact_date?: string | null;
           status?: FactStatus;
           group_key?: string | null;
+          stats?: Record<string, unknown> | null;
+          importance?: number | null;
           created_at?: string;
         };
         Update: {
@@ -117,6 +125,8 @@ export type Database = {
           fact_date?: string | null;
           status?: FactStatus;
           group_key?: string | null;
+          stats?: Record<string, unknown> | null;
+          importance?: number | null;
           created_at?: string;
         };
         Relationships: [
@@ -174,6 +184,9 @@ export type Database = {
           started_at: string | null;
           finished_at: string | null;
           error: string | null;
+          claimed_by: string | null;
+          heartbeat_at: string | null;
+          queue_name: string;
         };
         Insert: {
           id?: string;
@@ -184,6 +197,9 @@ export type Database = {
           started_at?: string | null;
           finished_at?: string | null;
           error?: string | null;
+          claimed_by?: string | null;
+          heartbeat_at?: string | null;
+          queue_name?: string;
         };
         Update: {
           id?: string;
@@ -194,6 +210,9 @@ export type Database = {
           started_at?: string | null;
           finished_at?: string | null;
           error?: string | null;
+          claimed_by?: string | null;
+          heartbeat_at?: string | null;
+          queue_name?: string;
         };
         Relationships: [
           {

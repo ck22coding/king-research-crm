@@ -27,7 +27,7 @@ async function signInRunner() {
 
 let companyId: string;
 
-test.describe.serial("capstone: enrich flow with stubbed suggested-fact insert", () => {
+test.describe.serial("capstone: enrich flow with stubbed fact insert", () => {
   test.beforeAll(async ({ browser, baseURL }) => {
     const { runner } = await signInRunner();
 
@@ -68,23 +68,23 @@ test.describe.serial("capstone: enrich flow with stubbed suggested-fact insert",
   });
 
   test.afterAll(async () => {
-    // No delete policies exist on any table — reject every fact belonging
-    // to the test company instead, so it starts at zero non-rejected facts
+    // No delete policies exist on any table — remove every fact belonging
+    // to the test company instead, so it starts at zero included facts
     // next run (idempotent/reusable).
     const { runner } = await signInRunner();
-    const { error } = await runner.from("facts").update({ status: "rejected" }).eq("company_id", companyId);
+    const { error } = await runner.from("facts").update({ status: "removed" }).eq("company_id", companyId);
     if (error) throw error;
   });
 
-  test("enrich queues a job + spinner, a runner-inserted suggested fact appears live, approve persists", async ({
+  test("enrich queues a job + spinner, a runner-inserted fact appears live, auto-included (§E)", async ({
     page,
   }) => {
     // Generous budget: an enrich round trip plus a realtime round trip, each
     // with its own warm-up wait (see realtime-smoke.spec.ts).
     test.setTimeout(90000);
 
-    // Source view — this test drives the fact list (Approve button, .item
-    // rows), which PDF report (now the default view) doesn't render.
+    // Source view — this test drives the fact list (.item rows), which
+    // PDF report (now the default view) doesn't render.
     await page.goto(`/companies/${companyId}?view=source`);
     const pill = page.locator(".toolbar .status");
     await expect(pill).not.toHaveClass(/in_progress/);
@@ -118,12 +118,13 @@ test.describe.serial("capstone: enrich flow with stubbed suggested-fact insert",
     // row we're about to watch for.
     await page.waitForTimeout(5000);
 
-    // --- stubbed skill output: runner (can_enrich=true) inserts a
-    // suggested fact + source, standing in for a real enrichment run ---
+    // --- stubbed skill output: runner (can_enrich=true) inserts a fact +
+    // source, standing in for a real enrichment run. No status: the column
+    // defaults to 'included' (§E auto-include by rule). ---
     const factText = `E2E stub fact ${Date.now()}`;
     const { data: fact, error: factError } = await runner
       .from("facts")
-      .insert({ company_id: companyId, section: "news", text: factText, status: "suggested" })
+      .insert({ company_id: companyId, section: "news", text: factText })
       .select("id")
       .single();
     if (factError) throw factError;
@@ -133,20 +134,17 @@ test.describe.serial("capstone: enrich flow with stubbed suggested-fact insert",
       .insert({ fact_id: fact.id, publisher: "E2E Wire", url: "https://e2e-test.example/story", year: 2026 });
     if (sourceError) throw sourceError;
 
-    // Still-open page, no reload — Task 7's realtime subscription surfaces it.
+    // Still-open page, no reload — Task 7's realtime subscription surfaces
+    // it, auto-included with the only curation action being Remove (§E).
     const item = page.locator(".item", { hasText: factText });
     await expect(item).toBeVisible({ timeout: 15000 });
-    await expect(item).toHaveClass(/\bsuggested\b/);
+    await expect(item).not.toHaveClass(/\bremoved\b/);
+    await expect(item.getByRole("button", { name: "Remove from report" })).toBeVisible();
 
-    // --- Task 6: approve, then confirm it persists across reload ---
-    await item.getByRole("button", { name: "Approve" }).click();
-    await expect(item).not.toHaveClass(/\bsuggested\b/);
-    await expect(item.getByRole("button", { name: "Approve" })).toHaveCount(0);
-
+    // Persists as included across reload — no approval step exists.
     await page.reload();
-    const approvedItem = page.locator(".item", { hasText: factText });
-    await expect(approvedItem).toBeVisible();
-    await expect(approvedItem).not.toHaveClass(/\bsuggested\b/);
-    await expect(approvedItem.getByRole("button", { name: "Approve" })).toHaveCount(0);
+    const persistedItem = page.locator(".item", { hasText: factText });
+    await expect(persistedItem).toBeVisible();
+    await expect(persistedItem).not.toHaveClass(/\bremoved\b/);
   });
 });

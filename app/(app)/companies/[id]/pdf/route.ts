@@ -19,7 +19,10 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       .from("facts")
       .select("section, text, fact_date, sources(publisher)")
       .eq("company_id", id)
-      .neq("status", "rejected"),
+      // "removed" (not the pre-pivot "rejected") — with the two-state status,
+      // filtering a value that no longer exists would silently match every
+      // row and leak removed facts into the PDF.
+      .neq("status", "removed"),
   ]);
 
   // "Not enriched" = no report — the same product invariant that disables

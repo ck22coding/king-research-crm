@@ -4,23 +4,24 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 
 // The migration's "authenticated update" policy on facts is `using (true)` —
-// any signed-in user can approve/reject, so no can_enrich check here.
+// any signed-in user can curate, so no can_enrich check here.
 // `from` pins the transition to the state the button was RENDERED against:
-// a stale Reject (drawn while the fact was suggested, clicked after a
-// colleague approved it) must be a no-op, not a silent un-approval. Server
-// actions are directly callable, so don't trust the caller.
+// a stale Remove (drawn while included, clicked after a colleague already
+// removed it) must be a no-op. Server actions are directly callable, so
+// don't trust the caller.
 // Runtime transition allowlist. `from` is caller-supplied and TypeScript
-// unions don't exist at runtime — a hand-crafted call must not move a fact
-// out of 'rejected' or invent transitions the UI never offers.
+// unions don't exist at runtime — a hand-crafted call must not invent
+// transitions the UI never offers. Post-pivot (§E) the two states are
+// symmetric: Remove from report, and Restore for walking a removal back.
 const LEGAL_TRANSITIONS: Record<string, string[]> = {
-  suggested: ["approved", "rejected"],
-  approved: ["rejected"],
+  included: ["removed"],
+  removed: ["included"],
 };
 
 export async function setFactStatus(
   factId: string,
-  status: "approved" | "rejected",
-  from: "suggested" | "approved",
+  status: "included" | "removed",
+  from: "included" | "removed",
 ) {
   if (!LEGAL_TRANSITIONS[from]?.includes(status)) return;
   const supabase = await createClient();
