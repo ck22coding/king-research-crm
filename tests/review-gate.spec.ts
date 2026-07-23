@@ -77,7 +77,7 @@ test.describe("review gate: suggested sources block the PDF", () => {
 
     // Download opens the explainer popup instead of downloading.
     await page.getByRole("button", { name: "Download PDF" }).click();
-    const dialog = page.locator("dialog.gate-dialog");
+    const dialog = page.locator(".gate-dialog");
     await expect(dialog).toBeVisible();
     await expect(dialog).toContainText("Review suggested sources first");
 

@@ -2,7 +2,6 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
 import { setFactStatus, approveFact, denyFact, enrichCompany } from "./actions";
-import DownloadPdfButton from "./download-pdf-button";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 import { REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
@@ -151,12 +150,38 @@ export default async function CompanyPage({
             Enrich
           </button>
         </form>
-        {hasBeenEnriched ? (
-          <DownloadPdfButton companyId={company.id} companyName={company.name} pendingReview={pendingReview} />
-        ) : (
+        {!hasBeenEnriched ? (
           <button type="button" className="btn" disabled aria-disabled="true" title="Enrich this company first">
             Download PDF
           </button>
+        ) : pendingReview === 0 ? (
+          <a className="btn primary" href={`/companies/${company.id}/pdf`} download={`${company.name}.pdf`}>
+            Download PDF
+          </a>
+        ) : (
+          // Review gate popup — native Popover API, no client JS. Mirrors
+          // pdf/route.ts, which refuses generation (409) in this state.
+          <>
+            <button type="button" className="btn primary" popoverTarget="review-gate-pop">
+              Download PDF
+            </button>
+            <div popover="auto" id="review-gate-pop" className="gate-dialog">
+              <h3>Review suggested sources first</h3>
+              <p>
+                Research found {pendingReview} suggested source{pendingReview === 1 ? "" : "s"} that{" "}
+                {pendingReview === 1 ? "hasn't" : "haven't"} been reviewed yet. Approve or deny each one in
+                the Source view — the PDF can be generated once every suggestion is handled.
+              </p>
+              <div className="gate-actions">
+                <button type="button" className="btn" popoverTarget="review-gate-pop" popoverTargetAction="hide">
+                  Close
+                </button>
+                <a className="btn primary" href={`/companies/${company.id}?view=source`}>
+                  Review sources
+                </a>
+              </div>
+            </div>
+          </>
         )}
         <CompanyStatusPill status={company.status} job={latestJob} />
       </div>

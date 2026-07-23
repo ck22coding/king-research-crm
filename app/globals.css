@@ -207,13 +207,12 @@
   }
   .gate-dialog{
     border:1px solid var(--border); border-radius:var(--radius); background:var(--bg);
-    color:var(--ink); padding:20px; max-width:420px; box-shadow:var(--shadow, 0 8px 30px rgb(0 0 0 / .12));
+    color:var(--ink); padding:20px; max-width:420px; box-shadow:0 8px 30px rgb(0 0 0 / .12);
   }
   .gate-dialog::backdrop{background:rgb(0 0 0 / .35)}
   .gate-dialog h3{margin:0 0 8px; font-size:14px}
   .gate-dialog p{margin:0 0 14px; color:var(--ink-2); font-size:13px; line-height:1.5}
   .gate-actions{display:flex; justify-content:flex-end; gap:8px}
-  .gate-actions a.btn{text-decoration:none}
 
   /* ---------- PDF report view (new in v1 — no prototype markup) ---------- */
   .pdf-frame{width:100%; height:80vh; border:1px solid var(--border); border-radius:var(--radius); background:#fff}
