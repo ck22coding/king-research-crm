@@ -23,15 +23,20 @@ export const STATUS_LABEL: Record<PillStatus, string> = {
 // hole in it is indistinguishable from a complete one.
 //
 // The runner writes: `partial: <sections> failed; the rest of the report completed`
-// Parsing is deliberately forgiving — if that wording ever drifts, we fall
-// back to showing the raw note rather than silently swallowing it.
+//
+// The `partial:` prefix (with the colon) is the contract, and nothing less
+// counts: `error` is a free-text column that also carries genuine failure
+// messages and test-cleanup strings, so a looser prefix test would read
+// "partial cleanup failed" as a partial report. The section LIST is parsed
+// leniently on top of that — if only the tail wording drifts we still show the
+// raw note rather than silently swallowing it.
 export function parsePartial(job?: { status: string; error: string | null } | null): {
   sections: string[];
   note: string;
 } | null {
   if (job?.status !== "done" || !job.error) return null;
   const note = job.error.trim();
-  if (!/^partial\b/i.test(note)) return null;
+  if (!/^partial:/i.test(note)) return null;
   const listed = note.match(/^partial:\s*(.+?)\s+failed\b/i);
   return { sections: listed ? listed[1].split(/,\s*/).filter(Boolean) : [], note };
 }
@@ -57,32 +62,41 @@ export function StatusPill({ status, title }: { status: PillStatus; title?: stri
 // run supersedes an older partial); done-but-partial → amber; otherwise the
 // company's own status. The record page's rail reads this too, so failure
 // surfacing can't drift between the two views.
+// `job` is the newest job of ANY kind (it decides failed/active); `enrichJob`
+// is the newest kind='enrich' job, which is the only thing that can be
+// partial. They are separate arguments on purpose: the normal flow is
+// Enrich → Review → Generate → Download, so a clean generate job is routinely
+// newer than a partial enrich. Reading partial off `job` would blank the
+// warning precisely as the user goes to download the PDF.
 export function deriveBriefStatus(
   status: CompanyStatus,
-  job?: { status: string; error: string | null } | null
+  job?: { status: string; error: string | null } | null,
+  enrichJob?: { status: string; error: string | null } | null
 ): PillStatus {
   if (job?.status === "failed") return "failed";
   const active = job?.status === "queued" || job?.status === "running";
   if (active) return "in_progress";
-  if (parsePartial(job)) return "partial";
+  if (parsePartial(enrichJob)) return "partial";
   return effectiveStatus(status, false);
 }
 
-// Pill for a company given its LATEST enrichment job.
+// Pill for a company given its latest job and its latest enrichment.
 export function CompanyStatusPill({
   status,
   job,
+  enrichJob,
 }: {
   status: CompanyStatus;
   job?: { status: string; error: string | null } | null;
+  enrichJob?: { status: string; error: string | null } | null;
 }) {
-  const pill = deriveBriefStatus(status, job);
+  const pill = deriveBriefStatus(status, job, enrichJob);
   if (pill === "failed") {
     // `||` (not ??): an empty-string error must still show the pill's fallback.
     return <StatusPill status="failed" title={job?.error || "unknown error"} />;
   }
   if (pill === "partial") {
-    return <StatusPill status="partial" title={parsePartial(job)!.note} />;
+    return <StatusPill status="partial" title={parsePartial(enrichJob)!.note} />;
   }
   return <StatusPill status={pill} />;
 }

@@ -28,9 +28,11 @@ function matches(row: CompanyRow, q: string) {
 export default function CompaniesTable({
   companies,
   latestJobByCompany = {},
+  latestEnrichByCompany = {},
 }: {
   companies: CompanyRow[];
   latestJobByCompany?: Record<string, { status: string; error: string | null }>;
+  latestEnrichByCompany?: Record<string, { status: string; error: string | null }>;
 }) {
   const [q, setQ] = useState("");
   const [adding, setAdding] = useState(false);
@@ -109,7 +111,11 @@ export default function CompaniesTable({
                 </td>
                 <td>{c.ownership}</td>
                 <td>
-                  <CompanyStatusPill status={c.status} job={latestJobByCompany[c.id]} />
+                  <CompanyStatusPill
+                    status={c.status}
+                    job={latestJobByCompany[c.id]}
+                    enrichJob={latestEnrichByCompany[c.id]}
+                  />
                 </td>
                 <td>{fmtDate(c.updated_at)}</td>
               </tr>

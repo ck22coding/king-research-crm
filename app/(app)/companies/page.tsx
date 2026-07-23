@@ -19,15 +19,22 @@ export default async function CompaniesPage() {
     // latest-per-company reduction never needed.
     supabase
       .from("enrichment_jobs")
-      .select("company_id, status, error")
+      .select("company_id, status, error, kind")
       .order("created_at", { ascending: false })
       .limit(1000),
     supabase.auth.getUser(),
   ]);
 
-  const latestJobByCompany: Record<string, { status: string; error: string | null }> = {};
+  type JobRow = { status: string; error: string | null };
+  const latestJobByCompany: Record<string, JobRow> = {};
+  // Partial is a property of the RESEARCH run, so it reads off the latest
+  // kind='enrich' job, not the latest job overall — the normal flow puts a
+  // clean kind='generate' job after the enrich, and reading partial off that
+  // would silently clear the warning (same reason as the record page).
+  const latestEnrichByCompany: Record<string, JobRow> = {};
   for (const j of jobs ?? []) {
     latestJobByCompany[j.company_id] ??= j;
+    if (j.kind === "enrich") latestEnrichByCompany[j.company_id] ??= j;
   }
 
   // Loud "your runner isn't connected" banner: only when the signed-in user
@@ -57,7 +64,11 @@ export default async function CompaniesPage() {
         </div>
       )}
       <RealtimeRefresh />
-      <CompaniesTable companies={companies ?? []} latestJobByCompany={latestJobByCompany} />
+      <CompaniesTable
+        companies={companies ?? []}
+        latestJobByCompany={latestJobByCompany}
+        latestEnrichByCompany={latestEnrichByCompany}
+      />
     </>
   );
 }

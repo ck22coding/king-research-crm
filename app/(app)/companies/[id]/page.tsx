@@ -6,6 +6,15 @@ import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 import { REPORT_SECTIONS, lastFactEvent, narrativeIsFresh, type ReportSectionSlug } from "@/lib/pdf/report";
 
+// Human label for a slug the runner reported as failed. Mostly report
+// sections, but the runner also counts `tldr` as a failable node (it moved
+// post-merge in the topic-graph rebuild) and it has no REPORT_SECTIONS entry.
+// Unknown slugs fall through to the raw value rather than being dropped.
+function sectionLabel(slug: string) {
+  if (slug === "tldr") return "TL;DR";
+  return REPORT_SECTIONS.find((r) => r.slug === slug)?.title ?? slug;
+}
+
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
 // ShellEvents' document-level click delegation (app/(app)/shell-events.tsx)
@@ -67,7 +76,7 @@ export default async function CompanyPage({
   const view: View = viewParam === "source" || viewParam === "history" ? viewParam : "pdf";
   const supabase = await createClient();
 
-  const [{ data: company }, { data: facts }, { data: jobs }] = await Promise.all([
+  const [{ data: company }, { data: facts }, { data: jobs }, { data: enrichJobs }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
     // Unfiltered by status — History (below) needs every fact ever found,
     // including removed ones. Source's bySection map filters rejected back
@@ -85,16 +94,29 @@ export default async function CompanyPage({
       .eq("company_id", id)
       .order("created_at", { ascending: false })
       .limit(1),
+    // Latest ENRICH job specifically. A partial report is a property of the
+    // research run, and the normal flow puts a kind='generate' job after it
+    // (Enrich → Review → Generate → Download). Reading "partial" off the
+    // latest job of any kind would make the warning vanish the moment the
+    // user generates — i.e. exactly as they go to download the PDF.
+    supabase
+      .from("enrichment_jobs")
+      .select("status, error")
+      .eq("company_id", id)
+      .eq("kind", "enrich")
+      .order("created_at", { ascending: false })
+      .limit(1),
   ]);
 
   if (!company) notFound();
 
   const latestJob = (jobs ?? [])[0] ?? null;
+  const latestEnrich = (enrichJobs ?? [])[0] ?? null;
   // Shared with CompanyStatusPill — one derivation, so the rail Attr and the
   // pill can never disagree about the state of the brief.
-  const briefStatus = deriveBriefStatus(company.status, latestJob);
+  const briefStatus = deriveBriefStatus(company.status, latestJob, latestEnrich);
   // Non-null when the last enrichment finished but lost a section (spec §10).
-  const partial = parsePartial(latestJob);
+  const partial = parsePartial(latestEnrich);
 
   // Both views share one query; bySection filters removed facts out in memory.
   // facts.section carries report slugs directly (post-migration); legacy slugs
@@ -210,7 +232,7 @@ export default async function CompanyPage({
             </div>
           </>
         )}
-        <CompanyStatusPill status={company.status} job={latestJob} />
+        <CompanyStatusPill status={company.status} job={latestJob} enrichJob={latestEnrich} />
       </div>
       <div className="scroll">
         <div className="rec-head">
@@ -250,11 +272,7 @@ export default async function CompanyPage({
                 {partial.sections.length > 0 ? (
                   <>
                     Research failed for{" "}
-                    <strong>
-                      {partial.sections
-                        .map((s) => REPORT_SECTIONS.find((r) => r.slug === s)?.title ?? s)
-                        .join(", ")}
-                    </strong>
+                    <strong>{partial.sections.map(sectionLabel).join(", ")}</strong>
                     . Everything else completed normally. Re-run Enrich to try the missing{" "}
                     {partial.sections.length === 1 ? "section" : "sections"} again.
                   </>
