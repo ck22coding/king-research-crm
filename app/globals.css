@@ -140,6 +140,10 @@
   .status.in_progress{background:var(--warn-bg); color:var(--warn-text)} .status.in_progress .dot{background:var(--warn)}
   .status.queued{background:var(--queued-bg); color:var(--ink-2)} .status.queued .dot{background:var(--ink-3)}
   .status.failed{background:var(--bad-bg); color:var(--bad-text)} .status.failed .dot{background:var(--bad)}
+  /* Partial = the report generated, but a section is missing. Amber not red —
+     it IS usable, unlike failed. Reuses the warn palette in_progress uses;
+     the distinct "Partial" label is what carries the meaning, per the rule above. */
+  .status.partial{background:var(--warn-bg); color:var(--warn-text)} .status.partial .dot{background:var(--warn)}
 
   /* ---------- record page ---------- */
   .crumbs{display:flex; align-items:center; gap:6px; color:var(--ink-3); font-size:12px}

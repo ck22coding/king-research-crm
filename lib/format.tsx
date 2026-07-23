@@ -3,17 +3,38 @@
 import type { ReactNode } from "react";
 import type { CompanyStatus } from "./supabase/database.types";
 
-// "failed" is a pill-only state (latest enrichment job failed), not a
-// companies.status value — the runner restores the company's own status on
-// failure and the job row carries the error.
-type PillStatus = CompanyStatus | "failed";
+// "failed" and "partial" are pill-only states derived from the latest
+// enrichment job, not companies.status values — the runner restores the
+// company's own status on failure, and the job row carries the detail.
+type PillStatus = CompanyStatus | "failed" | "partial";
 
 export const STATUS_LABEL: Record<PillStatus, string> = {
   ready: "Ready",
   in_progress: "In progress",
   queued: "Queued",
   failed: "Failed",
+  partial: "Partial",
 };
+
+// Partial reports (topic-graph enrichment, runner spec §10): when one topic
+// node dies, the runner finishes the job 'done' with the surviving sections'
+// facts written, and records what was lost as a note in enrichment_jobs.error.
+// Without this the company reads a plain green "Ready" and a report with a
+// hole in it is indistinguishable from a complete one.
+//
+// The runner writes: `partial: <sections> failed; the rest of the report completed`
+// Parsing is deliberately forgiving — if that wording ever drifts, we fall
+// back to showing the raw note rather than silently swallowing it.
+export function parsePartial(job?: { status: string; error: string | null } | null): {
+  sections: string[];
+  note: string;
+} | null {
+  if (job?.status !== "done" || !job.error) return null;
+  const note = job.error.trim();
+  if (!/^partial\b/i.test(note)) return null;
+  const listed = note.match(/^partial:\s*(.+?)\s+failed\b/i);
+  return { sections: listed ? listed[1].split(/,\s*/).filter(Boolean) : [], note };
+}
 
 // Spinner state (Task 7): in_progress-looking pill whenever the company is
 // mid-brief OR has a queued/running enrichment_jobs row, even if the
@@ -31,10 +52,23 @@ export function StatusPill({ status, title }: { status: PillStatus; title?: stri
   );
 }
 
-// Pill for a company given its LATEST enrichment job: failed → loud red pill
-// with the error on hover; queued/running → spinner; otherwise the company's
-// own status. One derivation shared by the list and record pages so failure
-// surfacing can't drift between them.
+// The one derivation of "what state is this company's brief in", given its
+// LATEST enrichment job: failed → loud red; queued/running → spinner (a fresh
+// run supersedes an older partial); done-but-partial → amber; otherwise the
+// company's own status. The record page's rail reads this too, so failure
+// surfacing can't drift between the two views.
+export function deriveBriefStatus(
+  status: CompanyStatus,
+  job?: { status: string; error: string | null } | null
+): PillStatus {
+  if (job?.status === "failed") return "failed";
+  const active = job?.status === "queued" || job?.status === "running";
+  if (active) return "in_progress";
+  if (parsePartial(job)) return "partial";
+  return effectiveStatus(status, false);
+}
+
+// Pill for a company given its LATEST enrichment job.
 export function CompanyStatusPill({
   status,
   job,
@@ -42,12 +76,15 @@ export function CompanyStatusPill({
   status: CompanyStatus;
   job?: { status: string; error: string | null } | null;
 }) {
-  if (job?.status === "failed") {
+  const pill = deriveBriefStatus(status, job);
+  if (pill === "failed") {
     // `||` (not ??): an empty-string error must still show the pill's fallback.
-    return <StatusPill status="failed" title={job.error || "unknown error"} />;
+    return <StatusPill status="failed" title={job?.error || "unknown error"} />;
   }
-  const active = job?.status === "queued" || job?.status === "running";
-  return <StatusPill status={effectiveStatus(status, active)} />;
+  if (pill === "partial") {
+    return <StatusPill status="partial" title={parsePartial(job)!.note} />;
+  }
+  return <StatusPill status={pill} />;
 }
 
 const AVATAR_HUES = [
