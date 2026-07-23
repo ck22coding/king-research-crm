@@ -19,7 +19,7 @@ export default async function CompaniesPage() {
     // latest-per-company reduction never needed.
     supabase
       .from("enrichment_jobs")
-      .select("company_id, status, error, requested_by")
+      .select("company_id, status, error")
       .order("created_at", { ascending: false })
       .limit(1000),
     supabase.auth.getUser(),
@@ -32,12 +32,19 @@ export default async function CompaniesPage() {
 
   // Loud "your runner isn't connected" banner: only when the signed-in user
   // has a job actually waiting on it, and their heartbeat is missing/stale.
-  const { data: hb } = user
-    ? await supabase.from("runner_heartbeats").select("last_seen_at").eq("user_id", user.id).maybeSingle()
-    : { data: null };
-  const myPending = (jobs ?? []).some(
-    (j) => j.requested_by === user?.id && (j.status === "queued" || j.status === "running"),
-  );
+  // Pending check is its own filtered query — the 1000-row pill window above
+  // can drop an old queued job once other users pile newer jobs on top.
+  const [{ data: hb }, { count: myPendingCount }] = user
+    ? await Promise.all([
+        supabase.from("runner_heartbeats").select("last_seen_at").eq("user_id", user.id).maybeSingle(),
+        supabase
+          .from("enrichment_jobs")
+          .select("id", { count: "exact", head: true })
+          .eq("requested_by", user.id)
+          .in("status", ["queued", "running"]),
+      ])
+    : [{ data: null }, { count: 0 }];
+  const myPending = (myPendingCount ?? 0) > 0;
   const runnerOffline =
     myPending && (!hb || Date.now() - new Date(hb.last_seen_at).getTime() > 120_000);
 
