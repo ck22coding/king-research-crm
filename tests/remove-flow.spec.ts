@@ -34,7 +34,7 @@ test.describe("remove / restore facts (§E auto-include)", () => {
     const supabase = await signedInClient();
     const { error } = await supabase
       .from("facts")
-      .update({ status: "included" })
+      .update({ status: "included", reviewed_at: new Date().toISOString() })
       .eq("id", FIXTURE_FACT_ID);
     if (error) throw error;
   });

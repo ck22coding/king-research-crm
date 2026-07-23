@@ -17,7 +17,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
     supabase
       .from("facts")
-      .select("section, text, fact_date, importance, sources(publisher)")
+      .select("section, text, fact_date, importance, reviewed_at, sources(publisher)")
       .eq("company_id", id)
       // "removed" (not the pre-pivot "rejected") — with the two-state status,
       // filtering a value that no longer exists would silently match every
@@ -30,6 +30,19 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // Direct navigation to this route shouldn't fabricate a placeholder PDF.
   if (!company?.tldr) {
     return new Response("Not found", { status: 404 });
+  }
+
+  // Review gate: generation is blocked while any included fact is an
+  // unreviewed suggestion (reviewed_at null). The record page never links
+  // here in that state (Download shows a popup, the report pane a prompt),
+  // so this only fires on direct navigation — but the dependency must hold
+  // server-side, not just in the UI.
+  const pendingReview = (facts ?? []).filter((f) => !f.reviewed_at).length;
+  if (pendingReview > 0) {
+    return new Response(
+      `Review pending: ${pendingReview} suggested source(s) must be approved or denied in the Source view before the PDF can be generated.`,
+      { status: 409 },
+    );
   }
 
   const doc = await PdfDoc.create();

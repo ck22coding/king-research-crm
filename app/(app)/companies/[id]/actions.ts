@@ -27,12 +27,32 @@ export async function setFactStatus(
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("facts")
-    .update({ status })
+    // Any explicit curation (Remove/Deny/Restore) counts as a review — it
+    // stamps reviewed_at so the fact stops gating the PDF (see approveFact).
+    .update({ status, reviewed_at: new Date().toISOString() })
     .eq("id", factId)
     .eq("status", from)
     .select("company_id")
     .single();
   if (error || !data) return; // realtime refresh keeps stale UI honest
+  revalidatePath(`/companies/${data.company_id}`);
+}
+
+// The review gate's Approve half: facts land from the runner with
+// reviewed_at null ("suggested"), and the PDF route refuses to generate
+// while any exist. Approve keeps the fact included and stamps it reviewed;
+// Deny is just setFactStatus(-> removed), which stamps too.
+export async function approveFact(factId: string) {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("facts")
+    .update({ reviewed_at: new Date().toISOString() })
+    .eq("id", factId)
+    .eq("status", "included")
+    .is("reviewed_at", null)
+    .select("company_id")
+    .single();
+  if (error || !data) return;
   revalidatePath(`/companies/${data.company_id}`);
 }
 

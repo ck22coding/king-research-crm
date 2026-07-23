@@ -106,6 +106,7 @@ export type Database = {
           group_key: string | null;
           stats: Record<string, unknown> | null;
           importance: number | null;
+          reviewed_at: string | null;
           created_at: string;
         };
         Insert: {
@@ -118,6 +119,7 @@ export type Database = {
           group_key?: string | null;
           stats?: Record<string, unknown> | null;
           importance?: number | null;
+          reviewed_at?: string | null;
           created_at?: string;
         };
         Update: {
@@ -130,6 +132,7 @@ export type Database = {
           group_key?: string | null;
           stats?: Record<string, unknown> | null;
           importance?: number | null;
+          reviewed_at?: string | null;
           created_at?: string;
         };
         Relationships: [

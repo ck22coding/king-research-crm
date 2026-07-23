@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
-import { setFactStatus, enrichCompany } from "./actions";
+import { setFactStatus, approveFact, enrichCompany } from "./actions";
+import DownloadPdfButton from "./download-pdf-button";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
 import { REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
@@ -47,6 +48,7 @@ type FactRow = {
   text: string;
   fact_date: string | null;
   status: FactStatus;
+  reviewed_at: string | null;
   sources: SourceRow[];
 };
 
@@ -72,7 +74,7 @@ export default async function CompanyPage({
     // out in memory rather than re-querying.
     supabase
       .from("facts")
-      .select("id, section, text, fact_date, status, sources(publisher, title, url, year)")
+      .select("id, section, text, fact_date, status, reviewed_at, sources(publisher, title, url, year)")
       .eq("company_id", id)
       .order("created_at"),
     // Latest job (any status): drives the pill — spinner while active, red
@@ -98,6 +100,10 @@ export default async function CompanyPage({
   // facts.section carries report slugs directly (post-migration); legacy slugs
   // with no report home (segmentation, market_sizing) surface in History only.
   const factSectionSlugs = new Set<string>(SECTIONS.map((s) => s.slug));
+  // Review gate: suggested sources (reviewed_at null, still included) block
+  // PDF generation until each is approved or denied. Counted here once and
+  // shared by the Download button (popup) and the report pane (prompt).
+  let pendingReview = 0;
   const bySection = new Map<ReportSectionSlug, FactRow[]>();
   const historyBySection = new Map<ReportSectionSlug, FactRow[]>();
   const legacyBySection = new Map<FactSection, FactRow[]>();
@@ -113,6 +119,7 @@ export default async function CompanyPage({
     list.push(fact);
     historyBySection.set(target, list);
     if (fact.status !== "removed") {
+      if (!fact.reviewed_at) pendingReview += 1;
       const included = bySection.get(target) ?? [];
       included.push(fact);
       bySection.set(target, included);
@@ -145,9 +152,7 @@ export default async function CompanyPage({
           </button>
         </form>
         {hasBeenEnriched ? (
-          <a className="btn primary" href={`/companies/${company.id}/pdf`} download={`${company.name}.pdf`}>
-            Download PDF
-          </a>
+          <DownloadPdfButton companyId={company.id} companyName={company.name} pendingReview={pendingReview} />
         ) : (
           <button type="button" className="btn" disabled aria-disabled="true" title="Enrich this company first">
             Download PDF
@@ -184,7 +189,9 @@ export default async function CompanyPage({
             <Attr k="Last updated" v={fmtDate(company.updated_at)} />
           </div>
           <div className="content">
-            {view === "pdf" && <PdfReportPane companyId={company.id} hasBeenEnriched={hasBeenEnriched} />}
+            {view === "pdf" && (
+              <PdfReportPane companyId={company.id} hasBeenEnriched={hasBeenEnriched} pendingReview={pendingReview} />
+            )}
             {(view === "history" || view === "source") && (
               <>
                 {view === "history" && (
@@ -242,9 +249,28 @@ function ViewTabs({ companyId, view }: { companyId: string; view: View }) {
   );
 }
 
-function PdfReportPane({ companyId, hasBeenEnriched }: { companyId: string; hasBeenEnriched: boolean }) {
+function PdfReportPane({
+  companyId,
+  hasBeenEnriched,
+  pendingReview,
+}: {
+  companyId: string;
+  hasBeenEnriched: boolean;
+  pendingReview: number;
+}) {
   if (!hasBeenEnriched) {
     return <div className="empty">No PDF yet — click Enrich to generate this company&rsquo;s report.</div>;
+  }
+  // Review gate: don't point the iframe at a route that would 409 — show the
+  // same instruction the Download popup gives.
+  if (pendingReview > 0) {
+    return (
+      <div className="empty">
+        {pendingReview} suggested source{pendingReview === 1 ? "" : "s"} to review — approve or deny each in
+        the <button className="tag" data-href={`/companies/${companyId}?view=source`}>Source</button> view,
+        then the PDF can be generated.
+      </div>
+    );
   }
   return <iframe className="pdf-frame" src={`/companies/${companyId}/pdf`} title="PDF report" />;
 }
@@ -294,9 +320,23 @@ function ItemRow({ item }: { item: FactRow }) {
           <span className="removed-badge">Removed from report</span>
           <FactStatusButton factId={item.id} to="included" from="removed" label="Restore" />
         </div>
+      ) : !item.reviewed_at ? (
+        // Suggested source (review gate): fresh from the runner, not yet
+        // reviewed. Approve stamps it reviewed; Deny removes it. The PDF
+        // stays locked until none of these remain.
+        <div className="fact-actions">
+          <span className="suggested-badge">Suggested</span>
+          <form>
+            <button type="submit" className="btn approve" formAction={approveFact.bind(null, item.id)}>
+              Approve
+            </button>
+          </form>
+          <FactStatusButton factId={item.id} to="removed" from="included" label="Deny" />
+        </div>
       ) : (
-        // Auto-include by rule (§E): the only curation action is remove.
-        // Excluded from the PDF + Source, still visible (marked) in History.
+        // Auto-include by rule (§E): once reviewed, the only curation
+        // action is remove. Excluded from the PDF + Source, still visible
+        // (marked) in History.
         <div className="fact-actions">
           <FactStatusButton factId={item.id} to="removed" from="included" label="Remove from report" />
         </div>

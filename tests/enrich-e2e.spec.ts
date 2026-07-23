@@ -76,7 +76,7 @@ test.describe.serial("capstone: enrich flow with stubbed fact insert", () => {
     if (error) throw error;
   });
 
-  test("enrich queues a job + spinner, a runner-inserted fact appears live, auto-included (§E)", async ({
+  test("enrich queues a job + spinner, a runner-inserted fact appears live as a suggested source", async ({
     page,
   }) => {
     // Generous budget: an enrich round trip plus a realtime round trip, each
@@ -135,16 +135,21 @@ test.describe.serial("capstone: enrich flow with stubbed fact insert", () => {
     if (sourceError) throw sourceError;
 
     // Still-open page, no reload — Task 7's realtime subscription surfaces
-    // it, auto-included with the only curation action being Remove (§E).
+    // it. Still auto-included (§E), but the review gate marks it as a
+    // suggested source until someone approves or denies it.
     const item = page.locator(".item", { hasText: factText });
     await expect(item).toBeVisible({ timeout: 15000 });
     await expect(item).not.toHaveClass(/\bremoved\b/);
-    await expect(item.getByRole("button", { name: "Remove from report" })).toBeVisible();
+    await expect(item.getByText("Suggested")).toBeVisible();
+    await expect(item.getByRole("button", { name: "Approve" })).toBeVisible();
+    await expect(item.getByRole("button", { name: "Deny" })).toBeVisible();
 
-    // Persists as included across reload — no approval step exists.
+    // Persists as a suggestion across reload; approving flips it back to the
+    // remove-only state (§E) and unblocks the PDF.
     await page.reload();
     const persistedItem = page.locator(".item", { hasText: factText });
     await expect(persistedItem).toBeVisible();
-    await expect(persistedItem).not.toHaveClass(/\bremoved\b/);
+    await persistedItem.getByRole("button", { name: "Approve" }).click();
+    await expect(persistedItem.getByRole("button", { name: "Remove from report" })).toBeVisible();
   });
 });
