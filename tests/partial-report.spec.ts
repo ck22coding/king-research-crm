@@ -46,7 +46,7 @@ async function fixtureCompany(supabase: SupabaseClient, uid: string) {
 // wording drifts, this test is what catches it.
 const PARTIAL_NOTE = "partial: financials, risk_flags failed; the rest of the report completed";
 
-async function newestJob(companyId: string, error: string | null) {
+async function newestJob(companyId: string, error: string | null, kind: "enrich" | "generate" = "enrich") {
   const { supabase, uid } = await db();
   const { data, error: insertError } = await supabase
     .from("enrichment_jobs")
@@ -54,6 +54,7 @@ async function newestJob(companyId: string, error: string | null) {
       company_id: companyId,
       requested_by: uid,
       status: "done",
+      kind,
       error,
       finished_at: new Date().toISOString(),
     })
@@ -61,6 +62,21 @@ async function newestJob(companyId: string, error: string | null) {
     .single();
   if (insertError) throw insertError;
   return data.id;
+}
+
+// There is NO delete policy on enrichment_jobs (select/insert/update only), so
+// a .delete() here silently no-ops and the row survives. Blank the note by
+// UPDATE instead — the same "mark it, don't delete it" convention the other
+// specs use — and check the write actually landed rather than trusting it.
+async function clearNote(jobId: string) {
+  const { supabase } = await db();
+  const { data, error } = await supabase
+    .from("enrichment_jobs")
+    .update({ error: null })
+    .eq("id", jobId)
+    .select("id");
+  if (error) throw error;
+  if (!data?.length) throw new Error(`cleanup did not clear job ${jobId} — it would poison the next run`);
 }
 
 test("a partial run surfaces as a Partial pill plus a named-sections notice", async ({ page }) => {
@@ -85,7 +101,27 @@ test("a partial run surfaces as a Partial pill plus a named-sections notice", as
     // The rail's "Brief status" reads the same derivation as the pill.
     await expect(page.locator(".rail")).toContainText("Partial");
   } finally {
-    await supabase.from("enrichment_jobs").delete().eq("id", jobId);
+    await clearNote(jobId);
+  }
+});
+
+// The regression codex caught: the real flow is Enrich → Review → Generate →
+// Download, so a clean kind='generate' job is routinely NEWER than the partial
+// enrich. Deriving partial from "latest job of any kind" blanked the warning at
+// exactly the moment the user went to download the PDF.
+test("a later generate job does not clear the partial warning", async ({ page }) => {
+  const { supabase, uid } = await db();
+  const companyId = await fixtureCompany(supabase, uid);
+  const enrichId = await newestJob(companyId, PARTIAL_NOTE, "enrich");
+  const generateId = await newestJob(companyId, null, "generate");
+
+  try {
+    await page.goto(`/companies/${companyId}`);
+    await expect(page.getByTestId("partial-report")).toBeVisible();
+    await expect(page.locator(".status.partial")).toHaveText(/Partial/);
+  } finally {
+    await clearNote(enrichId);
+    await clearNote(generateId);
   }
 });
 
@@ -99,6 +135,6 @@ test("a clean done job shows no partial notice", async ({ page }) => {
     await expect(page.getByTestId("partial-report")).toHaveCount(0);
     await expect(page.locator(".status.partial")).toHaveCount(0);
   } finally {
-    await supabase.from("enrichment_jobs").delete().eq("id", jobId);
+    await clearNote(jobId);
   }
 });
