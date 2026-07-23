@@ -109,6 +109,12 @@ export default function ShellEvents() {
     // any element with data-tip shows its text next to the cursor.
     const tip = document.getElementById("tooltip") as HTMLElement | null;
     function onMouseover(e: MouseEvent) {
+      // Hover prefetch: warm the target route (layout → first loading
+      // boundary) before the click, so router.push swaps instantly instead
+      // of starting the server round trip at click time. Repeated hovers
+      // are fine — the router dedupes prefetches for the cache lifetime.
+      const nav = (e.target as HTMLElement).closest<HTMLElement>("[data-href]");
+      if (nav) router.prefetch(nav.dataset.href!);
       if (!tip) return;
       const t = (e.target as HTMLElement).closest<HTMLElement>("[data-tip]");
       if (!t) {
