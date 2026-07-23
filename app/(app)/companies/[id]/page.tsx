@@ -4,7 +4,7 @@ import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr
 import { setFactStatus, approveFact, denyFact, enrichCompany, generateReport } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
-import { REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
+import { REPORT_SECTIONS, lastFactEvent, narrativeIsFresh, type ReportSectionSlug } from "@/lib/pdf/report";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
@@ -104,11 +104,6 @@ export default async function CompanyPage({
   // PDF generation until each is approved or denied. Counted here once and
   // shared by the Download button (popup) and the report pane (prompt).
   let pendingReview = 0;
-  // Latest report-affecting event (fact inserted / approved / denied /
-  // removed / restored — all stamp created_at or reviewed_at). The prose is
-  // current iff report_narrative.generated_at is newer; both sides feed the
-  // same rule in pdf/route.ts — keep them in sync.
-  let lastFactEvent: string | null = null;
   const bySection = new Map<ReportSectionSlug, FactRow[]>();
   const historyBySection = new Map<ReportSectionSlug, FactRow[]>();
   const legacyBySection = new Map<FactSection, FactRow[]>();
@@ -120,8 +115,6 @@ export default async function CompanyPage({
       continue;
     }
     const target = fact.section as ReportSectionSlug;
-    const latest = (fact.reviewed_at ?? "") > fact.created_at ? fact.reviewed_at! : fact.created_at;
-    if (!lastFactEvent || new Date(latest) > new Date(lastFactEvent)) lastFactEvent = latest;
     const list = historyBySection.get(target) ?? [];
     list.push(fact);
     historyBySection.set(target, list);
@@ -138,12 +131,12 @@ export default async function CompanyPage({
   // added but never enriched has tldr null, which is the signal both the
   // Download button and the PDF view key off of.
   const hasBeenEnriched = Boolean(company.tldr);
-  // Prose freshness (see pdf/route.ts for the matching server-side gate).
-  // Date() parses both Postgres "+00:00" and the runner's "Z" offsets —
-  // never compare generated_at to fact timestamps as strings.
+  // Prose freshness (shared gate — see lib/pdf/report + pdf/route.ts).
+  // historyBySection holds exactly the report-section facts (any status),
+  // which is the event set the watermark is defined over.
+  const reportFacts = [...historyBySection.values()].flat();
   const generatedAt = (company.report_narrative as { generated_at?: string } | null)?.generated_at;
-  const narrativeFresh =
-    Boolean(generatedAt) && (lastFactEvent === null || new Date(generatedAt!) >= new Date(lastFactEvent));
+  const narrativeFresh = narrativeIsFresh(generatedAt, lastFactEvent(reportFacts));
   const jobActive = latestJob?.status === "queued" || latestJob?.status === "running";
 
   return (

@@ -46,6 +46,26 @@ export type ReportFact = {
   sources: { publisher: string }[];
 };
 
+// Prose-freshness gate, shared by the record page and the PDF route so they
+// can never drift (both gate Download/generation on it). The report is a
+// generated artifact: every report-affecting event stamps a fact timestamp
+// (created_at on insert; reviewed_at on approve/deny/remove/restore), so the
+// narrative is current iff it was generated at/after the latest such stamp.
+// Pass ALL report-section facts, any status — a removal is an event too.
+// Date() parses both Postgres "+00:00" and the runner's "Z" offsets; never
+// compare these as strings. The runner stamps report_narrative.generated_at
+// with this same watermark (runner/index.mjs) — keep the definition aligned.
+export function lastFactEvent(facts: { created_at: string; reviewed_at: string | null }[]): string | null {
+  return facts.reduce<string | null>((max, f) => {
+    const t = (f.reviewed_at ?? "") > f.created_at ? f.reviewed_at! : f.created_at;
+    return !max || new Date(t) > new Date(max) ? t : max;
+  }, null);
+}
+
+export function narrativeIsFresh(generatedAt: string | undefined, lastEvent: string | null): boolean {
+  return Boolean(generatedAt) && (lastEvent === null || new Date(generatedAt!) >= new Date(lastEvent));
+}
+
 export type FactForReport = {
   section: FactSection;
   text: string;

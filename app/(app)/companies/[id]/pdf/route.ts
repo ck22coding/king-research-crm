@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PdfDoc } from "@/lib/pdf/pdf-writer";
-import { mapFactsToReportSections, renderCompanyReport, REPORT_SECTIONS } from "@/lib/pdf/report";
+import { mapFactsToReportSections, renderCompanyReport, REPORT_SECTIONS, lastFactEvent, narrativeIsFresh } from "@/lib/pdf/report";
 
 // Node runtime (not Edge) — pdf-lib works in both, but this keeps parity
 // with the rest of the app's server routes.
@@ -49,21 +49,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     );
   }
 
-  // Prose-freshness gate: the PDF is a generated artifact. Every
-  // report-affecting event stamps a fact timestamp (created_at on insert,
-  // reviewed_at on approve/deny/remove/restore), so the narrative is
-  // current iff generated after the latest of them. Date() parses both
-  // Postgres "+00:00" and JS "Z" offsets — never compare these as strings.
+  // Prose-freshness gate (shared with the record page via lib/pdf/report).
   // Runner-vs-Vercel clock skew is an accepted v1 ceiling (same family as
   // the runner's lease-clock note).
   const generatedAt = (company.report_narrative as { generated_at?: string } | null)?.generated_at;
-  const lastFactEvent = reportFacts.reduce<string | null>((max, f) => {
-    const latest = (f.reviewed_at ?? "") > (f.created_at ?? "") ? f.reviewed_at : f.created_at;
-    return latest && (!max || new Date(latest) > new Date(max)) ? latest : max;
-  }, null);
-  const narrativeFresh =
-    Boolean(generatedAt) && (lastFactEvent === null || new Date(generatedAt!) >= new Date(lastFactEvent));
-  if (!narrativeFresh) {
+  if (!narrativeIsFresh(generatedAt, lastFactEvent(reportFacts))) {
     return new Response(
       "Report not generated yet: sources are reviewed — click Generate report to build the prose from the approved sources.",
       { status: 409 },
