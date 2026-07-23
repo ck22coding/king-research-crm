@@ -45,6 +45,9 @@ export default function MarketsTable({ markets }: { markets: Market[] }) {
           </svg>
           <input placeholder="Filter…" value={q} onChange={(e) => setQ(e.target.value)} />
         </label>
+        <button className="btn" data-href="/markets?view=deck" data-tip="View the market assessment deck">
+          Assessment deck
+        </button>
         <button className="btn primary" onClick={showToast}>
           + New
         </button>
