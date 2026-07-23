@@ -2,6 +2,15 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { REPORT_SECTIONS } from "@/lib/pdf/report";
+
+// Same filtered set the page and pdf route gate on — a legacy-slug fact
+// (History-only, never in the PDF) must not wedge Generate into a silent
+// no-op while the button renders enabled (codex). company_summary is the
+// TL;DR card, never a fact section.
+const REPORT_SECTION_SLUGS = REPORT_SECTIONS.map((s) => s.slug).filter(
+  (s): s is Exclude<(typeof REPORT_SECTIONS)[number]["slug"], "company_summary"> => s !== "company_summary",
+);
 
 // The migration's "authenticated update" policy on facts is `using (true)` —
 // any signed-in user can curate, so no can_enrich check here.
@@ -90,6 +99,7 @@ export async function generateReport(companyId: string) {
       .select("id")
       .eq("company_id", companyId)
       .eq("status", "included")
+      .in("section", REPORT_SECTION_SLUGS)
       .is("reviewed_at", null)
       .limit(1),
   ]);
