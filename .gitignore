@@ -47,3 +47,6 @@ next-env.d.ts
 /playwright/.cache/
 /tests/.auth/
 .env*.local
+
+# Claude Code local worktrees / tooling (never committed)
+.claude/

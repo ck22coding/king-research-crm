@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PdfDoc } from "@/lib/pdf/pdf-writer";
-import { mapFactsToReportSections, renderCompanyReport, REPORT_SECTIONS } from "@/lib/pdf/report";
+import { mapFactsToReportSections, renderCompanyReport, REPORT_SECTIONS, lastFactEvent, narrativeIsFresh } from "@/lib/pdf/report";
 
 // Node runtime (not Edge) — pdf-lib works in both, but this keeps parity
 // with the rest of the app's server routes.
@@ -15,14 +15,13 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
 
   const [{ data: company }, { data: facts }] = await Promise.all([
     supabase.from("companies").select("*").eq("id", id).maybeSingle(),
+    // All statuses on purpose: removal is a report-affecting event whose
+    // reviewed_at stamp feeds the freshness check below. Removed facts are
+    // filtered back out in memory before rendering.
     supabase
       .from("facts")
-      .select("section, text, fact_date, importance, reviewed_at, sources(publisher)")
-      .eq("company_id", id)
-      // "removed" (not the pre-pivot "rejected") — with the two-state status,
-      // filtering a value that no longer exists would silently match every
-      // row and leak removed facts into the PDF.
-      .neq("status", "removed"),
+      .select("section, status, text, fact_date, importance, created_at, reviewed_at, sources(publisher)")
+      .eq("company_id", id),
   ]);
 
   // "Not enriched" = no report — the same product invariant that disables
@@ -32,18 +31,31 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     return new Response("Not found", { status: 404 });
   }
 
-  // Review gate: generation is blocked while any included fact is an
-  // unreviewed suggestion (reviewed_at null). The record page never links
-  // here in that state (Download shows a popup, the report pane a prompt),
-  // so this only fires on direct navigation — but the dependency must hold
-  // server-side, not just in the UI. Only report-section facts count — a
-  // legacy-slug fact never feeds the PDF, so it must not lock it (and the
-  // page counts the same filtered set).
+  // Review gate: blocked while any included fact is an unreviewed
+  // suggestion (reviewed_at null). The record page never links here in that
+  // state (Download shows a popup, the report pane a prompt), so this only
+  // fires on direct navigation — but the dependency must hold server-side,
+  // not just in the UI. Only report-section facts count — a legacy-slug
+  // fact never feeds the PDF, so it must not lock it (and the page counts
+  // the same filtered set).
   const reportSlugs = new Set<string>(REPORT_SECTIONS.map((s) => s.slug));
-  const pendingReview = (facts ?? []).filter((f) => reportSlugs.has(f.section) && !f.reviewed_at).length;
+  const reportFacts = (facts ?? []).filter((f) => reportSlugs.has(f.section));
+  const included = reportFacts.filter((f) => f.status !== "removed");
+  const pendingReview = included.filter((f) => !f.reviewed_at).length;
   if (pendingReview > 0) {
     return new Response(
-      `Review pending: ${pendingReview} suggested source(s) must be approved or denied in the Source view before the PDF can be generated.`,
+      `Review pending: ${pendingReview} suggested source(s) must be approved or denied in the Source view before the report can be generated.`,
+      { status: 409 },
+    );
+  }
+
+  // Prose-freshness gate (shared with the record page via lib/pdf/report).
+  // Runner-vs-Vercel clock skew is an accepted v1 ceiling (same family as
+  // the runner's lease-clock note).
+  const generatedAt = (company.report_narrative as { generated_at?: string } | null)?.generated_at;
+  if (!narrativeIsFresh(generatedAt, lastFactEvent(reportFacts))) {
+    return new Response(
+      "Report not generated yet: sources are reviewed — click Generate report to build the prose from the approved sources.",
       { status: 409 },
     );
   }
@@ -57,7 +69,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     companyName: company.name,
     descriptor: [company.ownership, company.hq].filter(Boolean).join(" · "),
     tldr: company.tldr,
-    sectionsData: mapFactsToReportSections(facts ?? []),
+    sectionsData: mapFactsToReportSections(included),
     narrative,
   });
 

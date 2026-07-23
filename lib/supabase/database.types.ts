@@ -73,6 +73,7 @@ export type Database = {
           finished_at: string | null
           heartbeat_at: string | null
           id: string
+          kind: EnrichmentJobKind
           queue_name: string
           requested_by: string | null
           started_at: string | null
@@ -86,6 +87,7 @@ export type Database = {
           finished_at?: string | null
           heartbeat_at?: string | null
           id?: string
+          kind?: EnrichmentJobKind
           queue_name?: string
           requested_by?: string | null
           started_at?: string | null
@@ -99,6 +101,7 @@ export type Database = {
           finished_at?: string | null
           heartbeat_at?: string | null
           id?: string
+          kind?: EnrichmentJobKind
           queue_name?: string
           requested_by?: string | null
           started_at?: string | null
@@ -426,15 +429,8 @@ export const Constants = {
     Enums: {},
   },
 } as const
+export type CompanyStatus = "queued" | "in_progress" | "ready";
 
-// Hand-added convenience unions — `status`/`section` are plain `text` with
-// CHECK constraints (not Postgres enums), so `supabase gen types` can't infer
-// them. Kept in sync with supabase/migrations/ by hand; see
-// 20260715120000_initial_schema.sql + 20260720120000_pdf_pivot_and_job_leases.sql.
-export type CompanyStatus = "queued" | "in_progress" | "ready"
-
-// 6 report sections (PDF pivot §A) + 2 legacy slugs kept read-only for
-// History; the skill never emits legacy slugs again.
 export type FactSection =
   | "leadership"
   | "acquisitions_partnerships"
@@ -443,9 +439,10 @@ export type FactSection =
   | "growth_signals"
   | "risk_flags"
   | "segmentation"
-  | "market_sizing"
+  | "market_sizing";
 
-// Auto-include by rule (§E): the only human action is remove (and restore).
-export type FactStatus = "included" | "removed"
+export type FactStatus = "included" | "removed";
 
-export type EnrichmentJobStatus = "queued" | "running" | "done" | "failed"
+export type EnrichmentJobStatus = "queued" | "running" | "done" | "failed";
+
+export type EnrichmentJobKind = "enrich" | "generate";

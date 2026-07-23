@@ -1,10 +1,10 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
-import { setFactStatus, approveFact, denyFact, enrichCompany } from "./actions";
+import { setFactStatus, approveFact, denyFact, enrichCompany, generateReport } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
-import { REPORT_SECTIONS, type ReportSectionSlug } from "@/lib/pdf/report";
+import { REPORT_SECTIONS, lastFactEvent, narrativeIsFresh, type ReportSectionSlug } from "@/lib/pdf/report";
 
 // Ports crm-ui/index.html's companyPage()/sectionCard()/itemRow()/srcChip()
 // 1:1 as server-rendered markup. Reading-pane clicks are wired up by
@@ -48,6 +48,7 @@ type FactRow = {
   fact_date: string | null;
   status: FactStatus;
   reviewed_at: string | null;
+  created_at: string;
   sources: SourceRow[];
 };
 
@@ -73,7 +74,7 @@ export default async function CompanyPage({
     // out in memory rather than re-querying.
     supabase
       .from("facts")
-      .select("id, section, text, fact_date, status, reviewed_at, sources(publisher, title, url, year)")
+      .select("id, section, text, fact_date, status, reviewed_at, created_at, sources(publisher, title, url, year)")
       .eq("company_id", id)
       .order("created_at"),
     // Latest job (any status): drives the pill — spinner while active, red
@@ -130,6 +131,13 @@ export default async function CompanyPage({
   // added but never enriched has tldr null, which is the signal both the
   // Download button and the PDF view key off of.
   const hasBeenEnriched = Boolean(company.tldr);
+  // Prose freshness (shared gate — see lib/pdf/report + pdf/route.ts).
+  // historyBySection holds exactly the report-section facts (any status),
+  // which is the event set the watermark is defined over.
+  const reportFacts = [...historyBySection.values()].flat();
+  const generatedAt = (company.report_narrative as { generated_at?: string } | null)?.generated_at;
+  const narrativeFresh = narrativeIsFresh(generatedAt, lastFactEvent(reportFacts));
+  const jobActive = latestJob?.status === "queued" || latestJob?.status === "running";
 
   return (
     <>
@@ -154,10 +162,29 @@ export default async function CompanyPage({
           <button type="button" className="btn" disabled aria-disabled="true" title="Enrich this company first">
             Download PDF
           </button>
-        ) : pendingReview === 0 ? (
+        ) : pendingReview === 0 && narrativeFresh ? (
           <a className="btn primary" href={`/companies/${company.id}/pdf`} download={`${company.name}.pdf`}>
             Download PDF
           </a>
+        ) : pendingReview === 0 ? (
+          // Reviewed but no current prose: the report is a generated
+          // artifact — Generate enqueues a kind='generate' job the local
+          // runner answers with ranking + synthesis over approved sources.
+          <>
+            <form>
+              <button
+                type="submit"
+                className="btn primary"
+                formAction={generateReport.bind(null, company.id)}
+                disabled={jobActive}
+              >
+                {jobActive ? "Working…" : "Generate report"}
+              </button>
+            </form>
+            <button type="button" className="btn" disabled aria-disabled="true" title="Generate the report first">
+              Download PDF
+            </button>
+          </>
         ) : (
           // Review gate popup — native Popover API, no client JS. Mirrors
           // pdf/route.ts, which refuses generation (409) in this state.
@@ -170,7 +197,7 @@ export default async function CompanyPage({
               <p>
                 Research found {pendingReview} suggested source{pendingReview === 1 ? "" : "s"} that{" "}
                 {pendingReview === 1 ? "hasn't" : "haven't"} been reviewed yet. Approve or deny each one in
-                the Source view — the PDF can be generated once every suggestion is handled.
+                the Source view, then generate the report — the prose only uses sources you approve.
               </p>
               <div className="gate-actions">
                 <button type="button" className="btn" popoverTarget="review-gate-pop" popoverTargetAction="hide">
@@ -215,7 +242,13 @@ export default async function CompanyPage({
           </div>
           <div className="content">
             {view === "pdf" && (
-              <PdfReportPane companyId={company.id} hasBeenEnriched={hasBeenEnriched} pendingReview={pendingReview} />
+              <PdfReportPane
+                companyId={company.id}
+                hasBeenEnriched={hasBeenEnriched}
+                pendingReview={pendingReview}
+                narrativeFresh={narrativeFresh}
+                jobActive={jobActive}
+              />
             )}
             {(view === "history" || view === "source") && (
               <>
@@ -278,13 +311,17 @@ function PdfReportPane({
   companyId,
   hasBeenEnriched,
   pendingReview,
+  narrativeFresh,
+  jobActive,
 }: {
   companyId: string;
   hasBeenEnriched: boolean;
   pendingReview: number;
+  narrativeFresh: boolean;
+  jobActive: boolean;
 }) {
   if (!hasBeenEnriched) {
-    return <div className="empty">No PDF yet — click Enrich to generate this company&rsquo;s report.</div>;
+    return <div className="empty">No PDF yet — click Enrich to gather this company&rsquo;s research.</div>;
   }
   // Review gate: don't point the iframe at a route that would 409 — show the
   // same instruction the Download popup gives.
@@ -293,7 +330,25 @@ function PdfReportPane({
       <div className="empty">
         {pendingReview} suggested source{pendingReview === 1 ? "" : "s"} to review — approve or deny each in
         the <button className="tag" data-href={`/companies/${companyId}?view=source`}>Source</button> view,
-        then the PDF can be generated.
+        then generate the report.
+      </div>
+    );
+  }
+  if (!narrativeFresh) {
+    return (
+      <div className="empty">
+        {jobActive ? (
+          <>Generating the report — it will appear here when the runner finishes.</>
+        ) : (
+          <>
+            Sources reviewed — generate the report to build the prose from your approved sources.{" "}
+            <form style={{ display: "inline-flex" }}>
+              <button type="submit" className="btn primary" formAction={generateReport.bind(null, companyId)}>
+                Generate report
+              </button>
+            </form>
+          </>
+        )}
       </div>
     );
   }
