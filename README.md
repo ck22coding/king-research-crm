@@ -1,36 +1,60 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# King Research CRM
 
-## Getting Started
+An open-source research CRM where **your own computer is the backend**. The
+hosted website only stores data and queues jobs; the actual research runs on
+each user's machine via [`king-research-runner`](https://www.npmjs.com/package/king-research-runner),
+signed in as that user through their own Claude subscription. No shared server
+does the AI work — everyone is self-sufficient.
 
-First, run the development server:
+- **Company enrichment** — queue a company, your runner researches it and
+  writes back a 7-section brief with cited sources, downloadable as a PDF.
+- **Market assessment** — side-by-side TAM/SAM estimates, segmentation,
+  competitive landscape, and dynamics for a market.
+- **Review gate** — suggested sources are approved or denied before the
+  report prose is generated, so nothing unvetted lands in the PDF.
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+Live instance: <https://king-research.vercel.app>
+
+## How it works
+
+```
+┌────────────┐   insert job row    ┌──────────────┐   claim job (as you)  ┌──────────────────┐
+│  Website   │ ──────────────────▶ │   Supabase   │ ◀──────────────────── │  Your runner     │
+│ (Next.js)  │                     │ (DB + auth)  │   write facts back     │ (claude -p, your │
+│  Vercel    │ ◀────────────────── │              │ ─────────────────────▶│  machine)        │
+└────────────┘   read facts/PDF    └──────────────┘                        └──────────────────┘
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+A web click can't run research directly — Anthropic's terms forbid a hosted
+backend using subscription tokens — so `claude -p` has to run on your machine.
+You pair your computer once with a one-time code from the website; the runner
+stores its own session and polls for jobs where `requested_by` is you.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Stack
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+- **Next.js** (App Router; middleware lives in `proxy.ts`) on **Vercel**
+- **Supabase** — Postgres, auth, and row-level security; migrations in `supabase/`
+- **The runner** — [`king-research-runner`](https://www.npmjs.com/package/king-research-runner) (separate repo)
 
-## Learn More
+## Local development
 
-To learn more about Next.js, take a look at the following resources:
+1. Install deps: `npm install`
+2. Create a Supabase project and apply the migrations:
+   ```bash
+   supabase link --project-ref <your-ref>
+   supabase db push
+   ```
+3. Copy the env vars into `.env.local`:
+   ```
+   NEXT_PUBLIC_SUPABASE_URL=https://<your-ref>.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=<your-anon-key>
+   SUPABASE_SERVICE_ROLE_KEY=<your-service-role-key>   # server-only, never exposed
+   ```
+4. Run it: `npm run dev` → <http://localhost:3000>
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+To do actual research locally, also run a paired runner — see the
+[runner README](https://www.npmjs.com/package/king-research-runner).
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+## License
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+MIT — see [LICENSE](./LICENSE).
