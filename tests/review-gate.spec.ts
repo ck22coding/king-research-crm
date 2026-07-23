@@ -40,6 +40,20 @@ async function setFixture(reviewed_at: string | null) {
     .update({ status: "included", reviewed_at })
     .eq("id", FIXTURE_FACT_ID);
   if (error) throw error;
+  // Deterministic prose state: no narrative (tests that want it fresh stamp
+  // their own), and no stray active job left by a crashed run (a queued job
+  // renders Generate as a disabled "Working…" button).
+  const { error: narrativeError } = await supabase
+    .from("companies")
+    .update({ report_narrative: null })
+    .eq("id", R1_ID);
+  if (narrativeError) throw narrativeError;
+  const { error: jobError } = await supabase
+    .from("enrichment_jobs")
+    .update({ status: "done" })
+    .eq("company_id", R1_ID)
+    .in("status", ["queued", "running"]);
+  if (jobError) throw jobError;
 }
 
 test.describe("review gate: suggested sources block the PDF", () => {
@@ -103,8 +117,22 @@ test.describe("review gate: suggested sources block the PDF", () => {
     await expect(item.getByText("Suggested")).toHaveCount(0);
     await expect(item.getByRole("button", { name: "Remove from report" })).toBeVisible();
 
-    // Toolbar Download is the plain anchor again; the route serves the PDF.
-    await expect(page.locator("a.btn", { hasText: "Download PDF" })).toBeVisible();
+    // Gate cleared — but the prose is a generated artifact: the toolbar
+    // offers Generate report and the route refuses until it has run.
+    await expect(page.getByRole("button", { name: "Generate report" })).toBeVisible();
+    const gated = await context.request.get(`/companies/${R1_ID}/pdf`);
+    expect(gated.status()).toBe(409);
+    expect(await gated.text()).toContain("Generate report");
+
+    // Stand in for the runner: stamp a fresh narrative — the route unlocks.
+    const supabase = await signedInClient();
+    const { error } = await supabase
+      .from("companies")
+      .update({
+        report_narrative: { sections: {}, generated_at: new Date(Date.now() + 60_000).toISOString() },
+      })
+      .eq("id", R1_ID);
+    if (error) throw error;
     const res = await context.request.get(`/companies/${R1_ID}/pdf`);
     expect(res.status()).toBe(200);
     expect(res.headers()["content-type"]).toBe("application/pdf");
@@ -122,8 +150,46 @@ test.describe("review gate: suggested sources block the PDF", () => {
 
     // Denied = removed from Source (History keeps it — remove-flow.spec).
     await expect(item).toHaveCount(0);
-    const res = await context.request.get(`/companies/${R1_ID}/pdf`);
-    expect(res.status()).toBe(200);
+    // Gate cleared; prose still pending — Generate is the offered action.
+    await page.goto(`/companies/${R1_ID}`);
+    // Generate renders in both the toolbar and the PDF pane — scope to one.
+    await expect(page.locator(".toolbar").getByRole("button", { name: "Generate report" })).toBeVisible();
+
+    await context.close();
+  });
+
+  test("Generate report enqueues a kind='generate' job for the runner", async ({
+    browser,
+    baseURL,
+  }) => {
+    // Requires migration 20260723140000 (enrichment_jobs.kind).
+    await setFixture(new Date().toISOString()); // review already complete
+
+    const { context, page } = await freshPage(browser, baseURL);
+    await page.goto(`/companies/${R1_ID}`);
+    await page.locator(".toolbar").getByRole("button", { name: "Generate report" }).click();
+
+    const supabase = await signedInClient();
+    await expect
+      .poll(async () => {
+        const { data } = await supabase
+          .from("enrichment_jobs")
+          .select("kind, status")
+          .eq("company_id", R1_ID)
+          .order("created_at", { ascending: false })
+          .limit(1);
+        return data?.[0] ? `${data[0].kind}:${data[0].status}` : "none";
+      })
+      .toBe("generate:queued");
+
+    // Settle it so R1 never wedges (no delete policy — mark done, like the
+    // sibling specs do).
+    const { error } = await supabase
+      .from("enrichment_jobs")
+      .update({ status: "done" })
+      .eq("company_id", R1_ID)
+      .in("status", ["queued"]);
+    if (error) throw error;
 
     await context.close();
   });

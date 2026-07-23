@@ -28,6 +28,19 @@ test.beforeAll(async () => {
   });
   if (authError) throw authError;
 
+  // The PDF is a generated artifact now (kind='generate' jobs): give
+  // Waystar a fresh narrative stamp so this file's Download/iframe/route
+  // assertions exercise the unlocked state. Empty sections = the renderer
+  // falls back to fact paragraphs; generated_at leads the clock by an hour
+  // so other specs' review stamps during this run can't make it stale.
+  const { error: narrativeError } = await runner
+    .from("companies")
+    .update({
+      report_narrative: { sections: {}, generated_at: new Date(Date.now() + 60 * 60 * 1000).toISOString() },
+    })
+    .eq("id", WAYSTAR_ID);
+  if (narrativeError) throw narrativeError;
+
   const { data: existing, error } = await runner
     .from("companies")
     .select("id")

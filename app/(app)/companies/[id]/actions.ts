@@ -66,6 +66,41 @@ async function reviewFact(factId: string, status: "included" | "removed") {
   revalidatePath(`/companies/${data.company_id}`);
 }
 
+// Queues a prose build: a kind='generate' job the local runner picks up and
+// answers with ranking + synthesis only (no research). Only meaningful once
+// every suggested source is reviewed — the prose must come from approved
+// sources — so it refuses while any suggestion is pending, and the same
+// active-job guard as enrichCompany applies (DB unique index backstops both).
+export async function generateReport(companyId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return;
+
+  const [{ data: active }, { data: pending }] = await Promise.all([
+    supabase
+      .from("enrichment_jobs")
+      .select("id")
+      .eq("company_id", companyId)
+      .in("status", ["queued", "running"])
+      .limit(1),
+    supabase
+      .from("facts")
+      .select("id")
+      .eq("company_id", companyId)
+      .eq("status", "included")
+      .is("reviewed_at", null)
+      .limit(1),
+  ]);
+  if (active?.length || pending?.length) return;
+
+  await supabase
+    .from("enrichment_jobs")
+    .insert({ company_id: companyId, requested_by: user.id, kind: "generate" });
+  revalidatePath(`/companies/${companyId}`);
+}
+
 // Queues an enrichment run (Task 8). status defaults to 'queued' per the
 // table default; requested_by comes from the server-side session, never the
 // client — the insert RLS policy requires requested_by = auth.uid(). No

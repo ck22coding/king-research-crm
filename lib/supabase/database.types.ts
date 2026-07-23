@@ -21,6 +21,10 @@ export type FactStatus = "included" | "removed";
 
 export type EnrichmentJobStatus = "queued" | "running" | "done" | "failed";
 
+// 'enrich' gathers + ranks facts; 'generate' builds the narrative prose from
+// reviewed facts (runner runs ranking + synthesis only, no research).
+export type EnrichmentJobKind = "enrich" | "generate";
+
 export type Database = {
   public: {
     Tables: {
@@ -193,6 +197,7 @@ export type Database = {
           claimed_by: string | null;
           heartbeat_at: string | null;
           queue_name: string;
+          kind: EnrichmentJobKind;
         };
         Insert: {
           id?: string;
@@ -206,6 +211,7 @@ export type Database = {
           claimed_by?: string | null;
           heartbeat_at?: string | null;
           queue_name?: string;
+          kind?: EnrichmentJobKind;
         };
         Update: {
           id?: string;
@@ -219,6 +225,7 @@ export type Database = {
           claimed_by?: string | null;
           heartbeat_at?: string | null;
           queue_name?: string;
+          kind?: EnrichmentJobKind;
         };
         Relationships: [
           {
