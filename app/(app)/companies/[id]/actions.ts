@@ -38,15 +38,25 @@ export async function setFactStatus(
   revalidatePath(`/companies/${data.company_id}`);
 }
 
-// The review gate's Approve half: facts land from the runner with
-// reviewed_at null ("suggested"), and the PDF route refuses to generate
-// while any exist. Approve keeps the fact included and stamps it reviewed;
-// Deny is just setFactStatus(-> removed), which stamps too.
+// The review gate's two halves. Facts land from the runner with reviewed_at
+// null ("suggested"), and the PDF route refuses to generate while any exist.
+// Approve keeps the fact included and stamps it reviewed; Deny removes it.
+// Both are pinned to the suggested state (`reviewed_at is null`) — a stale
+// Deny drawn before a colleague approved must be a no-op, not silently
+// remove an approved fact (same rationale as setFactStatus's `from` pin).
 export async function approveFact(factId: string) {
+  await reviewFact(factId, "included");
+}
+
+export async function denyFact(factId: string) {
+  await reviewFact(factId, "removed");
+}
+
+async function reviewFact(factId: string, status: "included" | "removed") {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("facts")
-    .update({ reviewed_at: new Date().toISOString() })
+    .update({ status, reviewed_at: new Date().toISOString() })
     .eq("id", factId)
     .eq("status", "included")
     .is("reviewed_at", null)

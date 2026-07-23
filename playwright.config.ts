@@ -5,6 +5,11 @@ import { defineConfig } from "@playwright/test";
 // child processes inherit a snapshot of process.env taken at spawn time.
 process.loadEnvFile("/Users/carterking/Projects/dad/.env");
 
+// Port is env-overridable because parallel Claude sessions (each in its own
+// worktree) fight over :3000 — the loser's suite silently runs against the
+// winner's code. `PW_PORT=3100 npx playwright test` gets a private server.
+const PORT = process.env.PW_PORT ?? "3000";
+
 export default defineConfig({
   testDir: "./tests",
   fullyParallel: true,
@@ -18,12 +23,12 @@ export default defineConfig({
   workers: 1,
   globalSetup: "./tests/global-setup.ts",
   webServer: {
-    command: "npm run dev",
-    url: "http://localhost:3000",
+    command: `npm run dev -- --port ${PORT}`,
+    url: `http://localhost:${PORT}`,
     reuseExistingServer: !process.env.CI,
   },
   use: {
-    baseURL: "http://localhost:3000",
+    baseURL: `http://localhost:${PORT}`,
     storageState: "tests/.auth/runner.json",
   },
 });

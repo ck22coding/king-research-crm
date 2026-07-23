@@ -53,7 +53,10 @@ export default async function globalSetup() {
 
   await resetSeededCompanies();
 
-  const context = await request.newContext({ baseURL: "http://localhost:3000" });
+  // Same PW_PORT override as playwright.config.ts — keep in sync.
+  const context = await request.newContext({
+    baseURL: `http://localhost:${process.env.PW_PORT ?? "3000"}`,
+  });
   const response = await context.post("/api/test-auth", { data: { email, password } });
   if (!response.ok()) {
     throw new Error(`/api/test-auth failed: ${response.status()} ${await response.text()}`);

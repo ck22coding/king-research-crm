@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
-import { setFactStatus, approveFact, enrichCompany } from "./actions";
+import { setFactStatus, approveFact, denyFact, enrichCompany } from "./actions";
 import DownloadPdfButton from "./download-pdf-button";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
@@ -331,7 +331,11 @@ function ItemRow({ item }: { item: FactRow }) {
               Approve
             </button>
           </form>
-          <FactStatusButton factId={item.id} to="removed" from="included" label="Deny" />
+          <form>
+            <button type="submit" className="btn reject" formAction={denyFact.bind(null, item.id)}>
+              Deny
+            </button>
+          </form>
         </div>
       ) : (
         // Auto-include by rule (§E): once reviewed, the only curation

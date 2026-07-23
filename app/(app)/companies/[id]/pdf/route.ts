@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { PdfDoc } from "@/lib/pdf/pdf-writer";
-import { mapFactsToReportSections, renderCompanyReport } from "@/lib/pdf/report";
+import { mapFactsToReportSections, renderCompanyReport, REPORT_SECTIONS } from "@/lib/pdf/report";
 
 // Node runtime (not Edge) — pdf-lib works in both, but this keeps parity
 // with the rest of the app's server routes.
@@ -36,8 +36,11 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   // unreviewed suggestion (reviewed_at null). The record page never links
   // here in that state (Download shows a popup, the report pane a prompt),
   // so this only fires on direct navigation — but the dependency must hold
-  // server-side, not just in the UI.
-  const pendingReview = (facts ?? []).filter((f) => !f.reviewed_at).length;
+  // server-side, not just in the UI. Only report-section facts count — a
+  // legacy-slug fact never feeds the PDF, so it must not lock it (and the
+  // page counts the same filtered set).
+  const reportSlugs = new Set<string>(REPORT_SECTIONS.map((s) => s.slug));
+  const pendingReview = (facts ?? []).filter((f) => reportSlugs.has(f.section) && !f.reviewed_at).length;
   if (pendingReview > 0) {
     return new Response(
       `Review pending: ${pendingReview} suggested source(s) must be approved or denied in the Source view before the PDF can be generated.`,
