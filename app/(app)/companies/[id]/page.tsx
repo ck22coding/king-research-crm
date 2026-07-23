@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { Avatar, CompanyStatusPill, STATUS_LABEL, effectiveStatus, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
+import { Avatar, CompanyStatusPill, STATUS_LABEL, deriveBriefStatus, parsePartial, fmtDate, Attr, SrcChip, EmptyState } from "@/lib/format";
 import { setFactStatus, approveFact, denyFact, enrichCompany, generateReport } from "./actions";
 import RealtimeRefresh from "@/lib/realtime";
 import type { FactSection, FactStatus } from "@/lib/supabase/database.types";
@@ -90,11 +90,11 @@ export default async function CompanyPage({
   if (!company) notFound();
 
   const latestJob = (jobs ?? [])[0] ?? null;
-  // Same derivation CompanyStatusPill uses — this copy feeds the rail Attr.
-  const briefStatus =
-    latestJob?.status === "failed"
-      ? ("failed" as const)
-      : effectiveStatus(company.status, latestJob?.status === "queued" || latestJob?.status === "running");
+  // Shared with CompanyStatusPill — one derivation, so the rail Attr and the
+  // pill can never disagree about the state of the brief.
+  const briefStatus = deriveBriefStatus(company.status, latestJob);
+  // Non-null when the last enrichment finished but lost a section (spec §10).
+  const partial = parsePartial(latestJob);
 
   // Both views share one query; bySection filters removed facts out in memory.
   // facts.section carries report slugs directly (post-migration); legacy slugs
@@ -241,6 +241,28 @@ export default async function CompanyPage({
             <Attr k="Last updated" v={fmtDate(company.updated_at)} />
           </div>
           <div className="content">
+            {/* Loud failure (spec §10 + §15): the last run finished but lost a
+                section, so this brief has a hole in it. The pill alone is a
+                hover title — too quiet for the person reading the report. */}
+            {partial && (
+              <div className="empty" data-testid="partial-report">
+                <strong>This brief is incomplete.</strong>{" "}
+                {partial.sections.length > 0 ? (
+                  <>
+                    Research failed for{" "}
+                    <strong>
+                      {partial.sections
+                        .map((s) => REPORT_SECTIONS.find((r) => r.slug === s)?.title ?? s)
+                        .join(", ")}
+                    </strong>
+                    . Everything else completed normally. Re-run Enrich to try the missing{" "}
+                    {partial.sections.length === 1 ? "section" : "sections"} again.
+                  </>
+                ) : (
+                  <>{partial.note}</>
+                )}
+              </div>
+            )}
             {view === "pdf" && (
               <PdfReportPane
                 companyId={company.id}
